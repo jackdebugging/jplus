@@ -597,7 +597,7 @@ private struct PersonPicker: View {
 // MARK: - Team
 
 /// A team's name beside the icon that stands for teams.
-private struct TeamLabel: View {
+struct TeamLabel: View {
     let team: JiraTeam
 
     var body: some View {
@@ -618,6 +618,7 @@ struct IssueTeamFieldView: View {
     let field: IssueTeamField
     let onChanged: () async -> Void
 
+    @Environment(SessionStore.self) private var session
     @State private var isEditing = false
 
     var body: some View {
@@ -628,17 +629,22 @@ struct IssueTeamFieldView: View {
                 Text("None").foregroundStyle(.secondary)
             }
         } editor: {
-            TeamPicker(issue: issue, field: field, isPresented: $isEditing, onChanged: onChanged)
+            TeamPicker(selected: field.team, isPresented: $isEditing) { team in
+                guard let client = session.client else { throw JiraError.unauthorized }
+                try await client.setTeam(id: team?.id, fieldID: field.fieldID, onIssue: issue.key)
+                await onChanged()
+            }
         }
     }
 }
 
 /// Search box and matching teams. Return picks the first match.
-private struct TeamPicker: View {
-    let issue: JiraIssue
-    let field: IssueTeamField
+struct TeamPicker: View {
+    let selected: JiraTeam?
     @Binding var isPresented: Bool
-    let onChanged: () async -> Void
+    /// Called with the chosen team, or nil for None. If it throws, the
+    /// picker stays open and shows the error.
+    let onChoose: (JiraTeam?) async throws -> Void
 
     private enum Choice: Hashable {
         case team(String)
@@ -661,15 +667,15 @@ private struct TeamPicker: View {
                 .textFieldStyle(.roundedBorder)
                 .focused($isSearchFocused)
                 .onSubmit {
-                    if let first = results?.first { Task { await choose(.team(first.id)) } }
+                    if let first = results?.first { Task { await choose(first) } }
                 }
                 .padding(10)
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 2) {
-                    if trimmedQuery.isEmpty, field.team != nil {
+                    if trimmedQuery.isEmpty, selected != nil {
                         PickerRow {
-                            Task { await choose(.clear) }
+                            Task { await choose(nil) }
                         } content: {
                             Text("None").foregroundStyle(.secondary)
                             Spacer(minLength: 4)
@@ -706,13 +712,13 @@ private struct TeamPicker: View {
 
     private func row(_ team: JiraTeam) -> some View {
         PickerRow {
-            Task { await choose(.team(team.id)) }
+            Task { await choose(team) }
         } content: {
             TeamLabel(team: team)
             Spacer(minLength: 4)
             if saving == .team(team.id) {
                 ProgressView().controlSize(.mini)
-            } else if team.id == field.team?.id {
+            } else if team.id == selected?.id {
                 Image(systemName: "checkmark").foregroundStyle(.tint)
             }
         }
@@ -741,18 +747,16 @@ private struct TeamPicker: View {
         }
     }
 
-    private func choose(_ choice: Choice) async {
-        guard let client = session.client, saving == nil else { return }
-        let teamID: String? = if case .team(let id) = choice { id } else { nil }
-        guard teamID != field.team?.id else {
+    private func choose(_ team: JiraTeam?) async {
+        guard saving == nil else { return }
+        guard team?.id != selected?.id else {
             isPresented = false
             return
         }
-        saving = choice
+        saving = team.map { .team($0.id) } ?? .clear
         saveError = nil
         do {
-            try await client.setTeam(id: teamID, fieldID: field.fieldID, onIssue: issue.key)
-            await onChanged()
+            try await onChoose(team)
             isPresented = false
         } catch {
             saveError = "Couldn't change the team: \(error.localizedDescription)"

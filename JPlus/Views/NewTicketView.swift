@@ -22,6 +22,19 @@ struct NewTicketView: View {
     @State private var summary = ""
     @State private var description = ""
     @State private var notes = ""
+    /// The project's unreleased versions, lowest first ("v1.9" before "v1.17").
+    @State private var unreleasedVersions: [JiraVersion] = []
+    /// "" for none. Defaults to the lowest unreleased version.
+    @State private var fixVersionID = ""
+    /// The project `unreleasedVersions` were loaded for.
+    @State private var versionsProjectKey: String?
+    /// The Team field, defaulting to App Team; nil while loading and on a site without one.
+    @State private var team: IssueTeamField?
+    @State private var isLoadingTeam = true
+    @State private var isPickingTeam = false
+    /// Ids of the fields on the create screen for `createFieldsKey`; nil if they couldn't be loaded.
+    @State private var createFields: Set<String>?
+    @State private var createFieldsKey: String?
 
     @State private var isDropTargeted = false
     @State private var showingFileImporter = false
@@ -33,12 +46,37 @@ struct NewTicketView: View {
     /// Local ⌘V handler, installed while this screen is visible.
     @State private var pasteMonitor: Any?
 
+    /// The team new tickets are given unless another is picked.
+    private static let defaultTeamName = "App Team"
+
     private var project: JiraProject? { projects.first { $0.key == projectKey } }
+
+    private var isLoadingVersions: Bool { versionsProjectKey != projectKey }
+
+    /// Identifies the create screen, which depends on both project and type.
+    private var createScreenKey: String { "\(projectKey)/\(issueTypeId)" }
+
+    /// Still loading the default fix version or team, or which fields the
+    /// create screen has; creating now could leave them out.
+    private var isLoadingFields: Bool {
+        isLoadingVersions || isLoadingTeam || createFieldsKey != createScreenKey
+    }
 
     private var canCreate: Bool {
         !summary.trimmingCharacters(in: .whitespaces).isEmpty
             && !projectKey.isEmpty && !issueTypeId.isEmpty
-            && !isCreating && !isDrafting
+            && !isCreating && !isDrafting && !isLoadingFields
+    }
+
+    /// Whether the create screen has this field. Assumed so until known, or
+    /// if it couldn't be loaded, so the rows don't flicker in.
+    private func isOnCreateScreen(_ fieldID: String) -> Bool {
+        guard createFieldsKey == createScreenKey, let createFields else { return true }
+        return createFields.contains(fieldID)
+    }
+
+    private var showsTeam: Bool {
+        isLoadingTeam || team.map { isOnCreateScreen($0.fieldID) } == true
     }
 
     var body: some View {
@@ -72,7 +110,10 @@ struct NewTicketView: View {
             }
         }
         .task { await loadProjects() }
+        .task { await loadDefaultTeam() }
         .task(id: projectKey) { await loadIssueTypes() }
+        .task(id: projectKey) { await loadVersions() }
+        .task(id: createScreenKey) { await loadCreateFields() }
         .onAppear(perform: installPasteMonitor)
         .onDisappear(perform: removePasteMonitor)
     }
@@ -167,6 +208,27 @@ struct NewTicketView: View {
                     }
                 }
             }
+            if isOnCreateScreen("fixVersions") {
+                GridRow {
+                    label("Fix version")
+                    Picker("Fix version", selection: $fixVersionID) {
+                        Text(isLoadingVersions ? "Loading…" : "None").tag("")
+                        if !unreleasedVersions.isEmpty { Divider() }
+                        ForEach(unreleasedVersions) { version in
+                            Text(version.name).tag(version.id)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(maxWidth: 320, alignment: .leading)
+                    .disabled(isLoadingVersions)
+                }
+            }
+            if showsTeam {
+                GridRow {
+                    label("Team")
+                    teamButton
+                }
+            }
             GridRow {
                 label("Summary")
                 TextField("Summary", text: $summary, prompt: Text("Short, specific title"))
@@ -196,6 +258,35 @@ struct NewTicketView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+            }
+        }
+    }
+
+    /// Looks like the pickers above it, but opens the team search, since a
+    /// site can have more teams than fit in a menu.
+    private var teamButton: some View {
+        Button {
+            isPickingTeam = true
+        } label: {
+            HStack(spacing: 6) {
+                if isLoadingTeam {
+                    Text("Loading…")
+                } else if let chosen = team?.team {
+                    Label(chosen.name, systemImage: "person.2.fill")
+                } else {
+                    Text("None")
+                }
+                Image(systemName: "chevron.up.chevron.down")
+                    .imageScale(.small)
+                    .foregroundStyle(.secondary)
+            }
+            .lineLimit(1)
+        }
+        .frame(maxWidth: 320, alignment: .leading)
+        .disabled(isLoadingTeam)
+        .popover(isPresented: $isPickingTeam, arrowEdge: .bottom) {
+            TeamPicker(selected: team?.team, isPresented: $isPickingTeam) { chosen in
+                team?.team = chosen
             }
         }
     }
@@ -294,6 +385,56 @@ struct NewTicketView: View {
         }
     }
 
+    /// The project's unreleased versions, picking the lowest. Results for a
+    /// project that is no longer chosen are dropped.
+    private func loadVersions() async {
+        let key = projectKey
+        unreleasedVersions = []
+        fixVersionID = ""
+        guard let client = session.client, !key.isEmpty else {
+            versionsProjectKey = key
+            return
+        }
+        let versions: [JiraVersion]
+        do {
+            versions = try await client.versionsWithoutCounts(projectKey: key)
+        } catch {
+            guard !Task.isCancelled, key == projectKey else { return }
+            versions = []
+            errorMessage = "Couldn't load versions: \(error.localizedDescription)"
+        }
+        guard !Task.isCancelled, key == projectKey else { return }
+        unreleasedVersions = versions
+            .filter { !$0.released && !$0.archived }
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        fixVersionID = unreleasedVersions.first?.id ?? ""
+        versionsProjectKey = key
+    }
+
+    /// Finds the Team field and the default team. Without either the ticket
+    /// is created with no team.
+    private func loadDefaultTeam() async {
+        defer { isLoadingTeam = false }
+        guard let client = session.client, let fieldID = try? await session.teamFieldID() else { return }
+        var field = IssueTeamField(fieldID: fieldID)
+        if let cloudId = try? await session.cloudId(),
+           let orgId = try? await session.orgId(),
+           let found = try? await client.teams(matching: Self.defaultTeamName, orgId: orgId, cloudId: cloudId) {
+            // The search is fuzzy, so it may also find "App Server Team".
+            field.team = found.first { $0.name.caseInsensitiveCompare(Self.defaultTeamName) == .orderedSame }
+        }
+        team = field
+    }
+
+    private func loadCreateFields() async {
+        let key = createScreenKey
+        guard let client = session.client, !projectKey.isEmpty, !issueTypeId.isEmpty else { return }
+        let fields = try? await client.createFieldIDs(projectKey: projectKey, issueTypeId: issueTypeId)
+        guard !Task.isCancelled, key == createScreenKey else { return }
+        createFields = fields
+        createFieldsKey = key
+    }
+
     private func selectIssueType(named name: String) {
         if let match = issueTypes.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) {
             issueTypeId = match.id
@@ -388,7 +529,9 @@ struct NewTicketView: View {
                 projectKey: projectKey,
                 issueTypeId: issueTypeId,
                 summary: summary.trimmingCharacters(in: .whitespacesAndNewlines),
-                description: description
+                description: description,
+                fixVersionID: isOnCreateScreen("fixVersions") && !fixVersionID.isEmpty ? fixVersionID : nil,
+                team: team.flatMap { isOnCreateScreen($0.fieldID) ? $0 : nil }
             )
         } catch {
             errorMessage = error.localizedDescription

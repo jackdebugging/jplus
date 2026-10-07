@@ -81,7 +81,12 @@ button), or Choose… a file. Pick project and type, write a summary, and press
 Create (⌘↩). The app calls `POST /rest/api/3/issue`, then uploads the image
 with `POST /rest/api/3/issue/{key}/attachments`, then opens the new issue.
 Descriptions are typed as plain text and converted to ADF; `## ` headings,
-`- ` bullets and `1. ` numbered lines are recognised.
+`- ` bullets and `1. ` numbered lines are recognised. Fix version defaults to
+the project's lowest unreleased version (by name, as in the sidebar) and Team
+to App Team; either can be changed or set to None. Each row is shown only if
+the chosen type's create screen has that field
+(`GET /rest/api/3/issue/createmeta/{project}/issuetypes/{type}`), since Jira
+rejects a create that sets a field missing from the screen.
 
 **Draft with Claude** is optional. Add an Anthropic API key under JPlus >
 Settings (stored in the Keychain). The button sends a downscaled PNG of the

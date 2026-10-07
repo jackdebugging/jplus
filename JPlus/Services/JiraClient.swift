@@ -364,8 +364,33 @@ struct JiraClient: Sendable {
         try await get("/rest/api/3/project/\(key)")
     }
 
+    /// Ids of the fields on the create screen for this project and issue
+    /// type, such as "fixVersions". Creating fails if it sets a field that
+    /// isn't on the screen.
+    func createFieldIDs(projectKey: String, issueTypeId: String) async throws -> Set<String> {
+        struct Page: Decodable {
+            let fields: [Field]
+            let total: Int?
+            struct Field: Decodable { let fieldId: String }
+        }
+        var ids = Set<String>()
+        var startAt = 0
+        while startAt < 1000 {
+            let page: Page = try await get("/rest/api/3/issue/createmeta/\(projectKey)/issuetypes/\(issueTypeId)", query: [
+                URLQueryItem(name: "startAt", value: String(startAt)),
+                URLQueryItem(name: "maxResults", value: "200"),
+            ])
+            ids.formUnion(page.fields.map(\.fieldId))
+            startAt += page.fields.count
+            if page.fields.isEmpty || startAt >= (page.total ?? startAt) { break }
+        }
+        return ids
+    }
+
     /// Creates an issue. `description` is plain text, converted to ADF.
-    func createIssue(projectKey: String, issueTypeId: String, summary: String, description: String) async throws -> CreatedIssue {
+    /// The fix version and team are left unset when nil.
+    func createIssue(projectKey: String, issueTypeId: String, summary: String, description: String,
+                     fixVersionID: String? = nil, team: IssueTeamField? = nil) async throws -> CreatedIssue {
         var fields: [String: Any] = [
             "project": ["key": projectKey],
             "issuetype": ["id": issueTypeId],
@@ -374,6 +399,12 @@ struct JiraClient: Sendable {
         let trimmed = description.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty {
             fields["description"] = ADFBuilder.document(from: trimmed)
+        }
+        if let fixVersionID {
+            fields["fixVersions"] = [["id": fixVersionID]]
+        }
+        if let team, let chosen = team.team {
+            fields[team.fieldID] = chosen.id
         }
         return try await post("/rest/api/3/issue", json: ["fields": fields])
     }

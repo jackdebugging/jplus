@@ -44,6 +44,7 @@ struct HomeView: View {
     @AppStorage("versionsProjectKey") private var versionsProjectKey = ""
     @AppStorage("sidebarVersionsExpanded") private var versionsExpanded = true
     @State private var sidebarVersions: [VersionRoute] = []
+    @State private var isRefreshingVersions = false
     /// How many recent issues the sidebar shows; grows with Load More.
     @State private var visibleRecentCount = HomeView.recentPageSize
     @State private var showPalette = false
@@ -154,8 +155,12 @@ struct HomeView: View {
                             .tag(SidebarItem.version(route))
                     }
                 } label: {
-                    Label("Versions", systemImage: "shippingbox")
-                        .tag(SidebarItem.versions)
+                    HStack(spacing: 4) {
+                        Label("Versions", systemImage: "shippingbox")
+                        Spacer(minLength: 4)
+                        refreshVersionsButton
+                    }
+                    .tag(SidebarItem.versions)
                 }
                 Label("My Issues", systemImage: "person.crop.square")
                     .tag(SidebarItem.myIssues)
@@ -180,6 +185,30 @@ struct HomeView: View {
             Divider()
             accountFooter
         }
+    }
+
+    /// Reloads the versions nested under Versions, e.g. after one is released.
+    private var refreshVersionsButton: some View {
+        Button {
+            Task {
+                isRefreshingVersions = true
+                await loadSidebarVersions()
+                isRefreshingVersions = false
+            }
+        } label: {
+            if isRefreshingVersions {
+                ProgressView().controlSize(.mini)
+            } else {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 11, weight: .medium))
+            }
+        }
+        .buttonStyle(.borderless)
+        .foregroundStyle(.secondary)
+        .frame(width: 18, height: 18)
+        .disabled(isRefreshingVersions)
+        .help("Refresh versions")
+        .accessibilityLabel("Refresh versions")
     }
 
     /// App name on the left, Search and New Ticket icons on the right.

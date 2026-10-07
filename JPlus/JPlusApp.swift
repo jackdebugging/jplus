@@ -13,6 +13,7 @@ struct JPlusApp: App {
                 .task { await settings.load() }
                 .task { await session.restore() }
                 .frame(minWidth: 480, minHeight: 360)
+                .background(WindowFrameAutosave(name: "JPlusMainWindow"))
         }
         .commands {
             CommandGroup(replacing: .newItem) {

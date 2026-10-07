@@ -20,7 +20,7 @@ A native macOS client for Jira Cloud, built with SwiftUI. Besides browsing, it c
 - [x] Edit an issue's title, description, status, priority, assignee, reporter and team; add comments
 - [x] Comments shown as threads; reply to a comment
 - [x] Settings: clear downloaded and cached data
-- [x] Versions per project with progress, drilling into each version's issues; Hide completed and Only show App Team toggles
+- [x] Versions per project with progress, drilling into each version's issues; Hide completed and Only show App Team toggles, and a button that opens the filtered list in Jira
 - [x] New Ticket: drop/paste/choose a screenshot, create the issue, attach the image
 - [x] Optional Draft with Claude: summary, description and type proposed from the screenshot
 - [ ] Boards and sprints
@@ -95,8 +95,16 @@ is sent to Anthropic unless you press that button.
 The top row of the sidebar has Search (⌘F) and New Ticket (⌘N) as icons.
 Below are Versions (expandable, with the five lowest unreleased versions of
 your project nested under it), My Issues (open issues assigned to you),
-Mentions, and your recent issues. The app opens on the first version under
-Versions, or on My Issues when there is none. As in ChatGPT's desktop app, the
+Mentions, and your recent issues.
+
+The app reopens where you left it, per account: the sidebar item and any
+issues or versions opened on top of it (saved as `lastPlace` in the
+account's defaults; versions are saved by id and looked up again so their
+counts are current). With nothing saved, or if a saved version is gone, it
+opens on the first version under Versions, or on My Issues when there is
+none. The window's position and size are kept with AppKit's frame autosave,
+since SwiftUI only restores them when macOS's "Close windows when quitting
+an application" is off. As in ChatGPT's desktop app, the
 signed-in user sits at the bottom of the sidebar: your name and site, with a
 menu for Account, Settings…, opening the site in a browser, and Switch
 Account…. ⌘K jumps to any issue or version.
@@ -285,6 +293,12 @@ gateway: `tenantContexts` gives the site's organization id, then
 also returns "App Server Team") with its members. The query gets
 `assignee in ("<accountId>", ...)`. Members are fetched once per session.
 
+Open in Jira, after the toggles, opens the list in Jira's issue search
+(`/issues/?jql=...`) with the same query, so the browser shows what the
+toggles leave here; right-click it to copy that URL instead. Text typed in
+the filter field only narrows the rows already loaded and isn't part of the
+link. ⇧⌘O still opens the version's release page, which has no such filters.
+
 ## App icon
 
 The icon source is [Design/jplus-icon.svg](Design/jplus-icon.svg): a bold black
@@ -314,6 +328,7 @@ JPlus/
     JiraProject.swift       Project list
     JiraVersion.swift       Versions with issue-status counts
     JiraTeam.swift          A team from Atlassian Teams, and an issue's Team field
+    SavedPlace.swift        What the window was showing, for reopening there
     JiraCreate.swift        Issue types, create/attach responses, plain text -> ADF
     IssueExtras.swift       Linked designs and attachment media ids (GraphQL)
     ADF.swift               Atlassian Document Format tree
@@ -347,6 +362,7 @@ JPlus/
     SearchView.swift        Advanced JQL search: presets, history, results
     VersionsView.swift      Project picker + grouped versions with progress bars
     VersionDetailView.swift One version's header and issues
+    WindowFrameAutosave.swift Saves and restores the main window's frame
     IssueListView.swift     Shared issue table + footer
     IssueDetailView.swift   Issue header and parent, description, subtasks, designs, comments; fields and attachments column
     IssueEditing.swift      Title, status, priority, assignee/reporter, team and description editors; comment threads, comment and reply boxes

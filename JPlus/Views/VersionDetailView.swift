@@ -264,6 +264,22 @@ struct VersionDetailView: View {
                         .toggleStyle(.checkbox)
                         .fixedSize()
                         .help("Show only issues assigned to a member of \(Self.appTeamName) in Atlassian Teams")
+                    Button("Open in Jira", systemImage: "safari") {
+                        Task { if let url = await listURL() { openURL(url) } }
+                    }
+                    .controlSize(.small)
+                    .fixedSize()
+                    .disabled(!canLinkToList)
+                    .help("Open this list in Jira's issue search, with the same filters")
+                    .contextMenu {
+                        Button("Copy URL") {
+                            Task {
+                                guard let url = await listURL() else { return }
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                            }
+                        }
+                    }
                 }
                 // Blank rather than striped when empty, or the stripes behind the message read as rows.
                 .alternatingRowBackgrounds(shownIssues.isEmpty ? .disabled : .automatic)
@@ -320,6 +336,27 @@ struct VersionDetailView: View {
         // Toggled again while the team or status list loaded; that newer run takes over.
         guard hiding == hideCompleted, teamOnly == onlyAppTeam else { return }
         await query.run(jql, using: client, keepingResults: true)
+    }
+
+    /// False only once it's known a query can't say what the toggles show:
+    /// Only show App Team is on and the team couldn't be loaded or has no
+    /// members to name as assignees. While they load, the link waits for them.
+    private var canLinkToList: Bool {
+        !onlyAppTeam || (appTeamError == nil && appTeamMemberIDs?.isEmpty != true)
+    }
+
+    /// Jira's issue search on the web, running this list's query as the
+    /// toggles stand now rather than as last fetched.
+    private func listURL() async -> URL? {
+        guard let client = session.client else { return nil }
+        var assignees: Set<String>?
+        if onlyAppTeam {
+            // Already fetched for the list as a rule; a click before then waits here.
+            guard let members = try? await session.teamMemberIDs(teamNamed: Self.appTeamName),
+                  !members.isEmpty else { return nil }
+            assignees = members
+        }
+        return client.browseURL(jql: await jql(hidingCompleted: hideCompleted, assignees: assignees))
     }
 
     private func jql(hidingCompleted: Bool, assignees: Set<String>?) async -> String {

@@ -19,11 +19,25 @@ struct HomeView: View {
         case issue(String)
     }
 
+    /// A screen opened on top of the sidebar item.
+    enum Destination: Hashable {
+        case issue(String)
+        case version(VersionRoute)
+    }
+
     /// Nil at launch until the sidebar's versions load; see `chooseStartPage()`.
     @State private var selection: SidebarItem?
     /// Set once the launch page is picked, or once something else is chosen first.
     @State private var hasStartPage = false
-    @State private var path = NavigationPath()
+    @State private var path: [Destination] = []
+    /// Stack to show once a restored sidebar item is selected, since selecting clears the stack.
+    @State private var pendingPath: [Destination]?
+    /// True while the last session's place is looked up at launch.
+    @State private var isRestoringPlace = true
+    /// Set once the sidebar's versions have loaded or failed to.
+    @State private var hasLoadedSidebarVersions = false
+    /// JSON of the last `SavedPlace`.
+    @AppStorage("lastPlace") private var lastPlaceData = Data()
 
     @AppStorage("recentIssueKeys") private var recentKeysRaw = ""
     /// Project chosen on the Versions screen; its versions nest in the sidebar.
@@ -57,20 +71,34 @@ struct HomeView: View {
         } detail: {
             NavigationStack(path: $path) {
                 detail
-                    .navigationDestination(for: String.self) { key in
-                        IssueDetailView(key: key, onOpenIssue: pushIssue)
-                    }
-                    .navigationDestination(for: VersionRoute.self) { route in
-                        VersionDetailView(route: route, onOpenIssue: pushIssue)
+                    .navigationDestination(for: Destination.self) { destination in
+                        switch destination {
+                        case .issue(let key):
+                            IssueDetailView(key: key, onOpenIssue: pushIssue)
+                        case .version(let route):
+                            VersionDetailView(route: route, onOpenIssue: pushIssue)
+                        }
                     }
             }
         }
         .onChange(of: selection) {
-            path = NavigationPath()
+            path = pendingPath ?? []
+            pendingPath = nil
             if selection != nil { hasStartPage = true }
+        }
+        .onChange(of: currentPlace) {
+            if let currentPlace, let data = try? JSONEncoder().encode(currentPlace) {
+                lastPlaceData = data
+            }
         }
         .task(id: versionsProjectKey.isEmpty ? recentProjectKey : versionsProjectKey) {
             await loadSidebarVersions()
+            hasLoadedSidebarVersions = true
+            chooseStartPage()
+        }
+        .task {
+            await restoreLastPlace()
+            isRestoringPlace = false
             chooseStartPage()
         }
         .task {
@@ -313,7 +341,7 @@ struct HomeView: View {
             )
         case .versions:
             VersionsView(suggestedProjectKey: recentProjectKey) { route in
-                path.append(route)
+                path.append(.version(route))
             }
         case .version(let route):
             VersionDetailView(route: route, onOpenIssue: pushIssue)
@@ -348,18 +376,99 @@ struct HomeView: View {
                 .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
                 .prefix(5)
                 .map { VersionRoute(version: $0, project: project) }
+            // A version restored before these loaded is a separate copy, so its row wouldn't show as selected.
+            if case .version(let current) = selection,
+               let match = sidebarVersions.first(where: { $0.version.id == current.version.id }),
+               match != current {
+                pendingPath = path
+                selection = .version(match)
+            }
         } catch {
             // Keep whatever was shown; the Versions screen reports errors.
         }
     }
 
-    /// Opens on the first version under Versions in the sidebar, or My Issues
-    /// if there are none or they couldn't load. Runs once, and not at all if
-    /// something was picked while the versions loaded.
+    /// Without a place to restore, opens on the first version under Versions
+    /// in the sidebar, or My Issues if there are none or they couldn't load.
+    /// Runs once, and not at all if something was picked while loading.
     private func chooseStartPage() {
-        guard !hasStartPage else { return }
+        guard !hasStartPage, !isRestoringPlace, hasLoadedSidebarVersions else { return }
         hasStartPage = true
         selection = sidebarVersions.first.map(SidebarItem.version) ?? .myIssues
+    }
+
+    // MARK: - Last place
+
+    /// What's on screen now, in the form that's saved; nil until the start page is up.
+    private var currentPlace: SavedPlace? {
+        guard hasStartPage, let selection else { return nil }
+        let sidebar: SavedPlace.Screen = switch selection {
+        case .myIssues: .myIssues
+        case .mentions: .mentions
+        case .account: .account
+        case .search: .search
+        case .versions: .versions
+        case .newTicket: .newTicket
+        case .issue(let key): .issue(key)
+        case .version(let route): .version(projectKey: route.project.key, versionID: route.version.id)
+        }
+        let stack: [SavedPlace.Screen] = path.suffix(SavedPlace.maxStackDepth).map {
+            switch $0 {
+            case .issue(let key): .issue(key)
+            case .version(let route): .version(projectKey: route.project.key, versionID: route.version.id)
+            }
+        }
+        return SavedPlace(sidebar: sidebar, stack: stack)
+    }
+
+    /// Reopens what was on screen when the app was last used: the sidebar
+    /// item and everything opened on top of it. Versions are looked up again;
+    /// one that no longer exists is skipped, and if it was the sidebar item
+    /// the usual start page opens instead.
+    private func restoreLastPlace() async {
+        guard let saved = try? JSONDecoder().decode(SavedPlace.self, from: lastPlaceData) else { return }
+        var resolver = VersionResolver(client: session.client)
+        guard let sidebar = await sidebarItem(for: saved.sidebar, using: &resolver) else { return }
+        var stack: [Destination] = []
+        for screen in saved.stack {
+            switch screen {
+            case .issue(let key):
+                stack.append(.issue(key))
+            case .version(let projectKey, let versionID):
+                if let route = await resolver.route(projectKey: projectKey, versionID: versionID) {
+                    stack.append(.version(route))
+                }
+            default:
+                break
+            }
+        }
+        // Something was opened while this loaded; leave it.
+        guard !hasStartPage else { return }
+        hasStartPage = true
+        if sidebar == selection {
+            path = stack
+        } else {
+            pendingPath = stack
+            selection = sidebar
+        }
+    }
+
+    private func sidebarItem(for screen: SavedPlace.Screen, using resolver: inout VersionResolver) async -> SidebarItem? {
+        switch screen {
+        case .myIssues: return .myIssues
+        case .mentions: return .mentions
+        case .account: return .account
+        case .search: return .search
+        case .versions: return .versions
+        case .newTicket: return .newTicket
+        case .issue(let key): return .issue(key)
+        case .version(let projectKey, let versionID):
+            // The sidebar's own copy if it has loaded, so its row shows as selected.
+            if let route = sidebarVersions.first(where: { $0.version.id == versionID }) {
+                return .version(route)
+            }
+            return await resolver.route(projectKey: projectKey, versionID: versionID).map(SidebarItem.version)
+        }
     }
 
     private func openSearch() {
@@ -371,7 +480,7 @@ struct HomeView: View {
         remember(key)
         // Opened from ⌘K before the start page was picked; picking it now would clear this.
         hasStartPage = true
-        path.append(key)
+        path.append(.issue(key))
     }
 
     private func remember(_ key: String?) {
@@ -412,13 +521,39 @@ struct HomeView: View {
         case .version(let route):
             remember(nil)
             hasStartPage = true
-            path.append(route)
+            path.append(.version(route))
         }
     }
 
     private func removeRecent(_ key: String) {
         recentKeysRaw = recentKeys.filter { $0 != key }.joined(separator: ",")
         if selection == .issue(key) { selection = .myIssues }
+    }
+}
+
+/// Looks up saved versions by id, fetching each project and its versions once.
+private struct VersionResolver {
+    let client: JiraClient?
+    private var projects: [JiraProject]?
+    private var versionsByProject: [String: [JiraVersion]] = [:]
+
+    init(client: JiraClient?) {
+        self.client = client
+    }
+
+    mutating func route(projectKey: String, versionID: String) async -> VersionRoute? {
+        guard let client else { return nil }
+        do {
+            if projects == nil { projects = try await client.projects() }
+            guard let project = projects?.first(where: { $0.key == projectKey }) else { return nil }
+            if versionsByProject[projectKey] == nil {
+                versionsByProject[projectKey] = try await client.versions(projectKey: projectKey)
+            }
+            guard let version = versionsByProject[projectKey]?.first(where: { $0.id == versionID }) else { return nil }
+            return VersionRoute(version: version, project: project)
+        } catch {
+            return nil
+        }
     }
 }
 

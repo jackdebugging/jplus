@@ -126,6 +126,33 @@ descriptions and comments for mention tags with your account ID; comments
 are timed by when they were written, description mentions by when the issue
 was created. Load Older Mentions pages further back.
 
+## Daily Priorities
+
+The team's daily list, kept in Confluence so everyone sees the same thing.
+The first time the screen opens it searches the site for a folder called
+"Daily Priorities" inside a "Mobile App" (or "Mobile Apps") folder and uses
+it; if there isn't exactly one, it asks you to paste the folder's link
+(toolbar > Choose Folder… changes it later). Inside it each month is a
+`yyyy-MM` folder and each day a `yyyy-MM-dd` page whose body is a native
+Confluence task list. The screen shows Today
+first, then earlier days, 14 at a time (Show Earlier Days for more).
+
+Tick a box to finish an item, double-click (or Edit…) to change its text,
+right-click for Mark Done, Move to Today, Copy Text and Delete. Type in
+"Add a priority…" and press Return to add; the first item of a day creates
+the day's page, and the month's folder when it's the first day of the month.
+Carry Over copies the previous day's unfinished items onto today. Typed
+issue keys become issue cards and typed web addresses become links; issue
+cards for this site open in the app.
+
+Every edit re-reads the page, applies the change to the current version and
+saves; if someone saved in between, Confluence answers 409 and the edit is
+retried on the newer version, so two people ticking boxes at once don't
+overwrite each other. Items are tracked by the task's `localId`, which
+Confluence keeps across edits made in the browser. The Confluence v2 API
+(`/wiki/api/v2`) takes the same email + API token as Jira; the page body
+goes over as `atlas_doc_format`, the same ADF the app already renders.
+
 ## Search
 
 Click the magnifying glass at the top of the sidebar, or press ⌘F.

@@ -1,7 +1,7 @@
 import Foundation
 
 /// A loosely-typed JSON value, used for ADF node/mark attributes.
-nonisolated enum JSONValue: Decodable, Hashable, Sendable {
+nonisolated enum JSONValue: Codable, Hashable, Sendable {
     case string(String)
     case number(Double)
     case bool(Bool)
@@ -28,6 +28,18 @@ nonisolated enum JSONValue: Decodable, Hashable, Sendable {
         }
     }
 
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .string(let value): try container.encode(value)
+        case .number(let value): try container.encode(value)
+        case .bool(let value): try container.encode(value)
+        case .null: try container.encodeNil()
+        case .array(let value): try container.encode(value)
+        case .object(let value): try container.encode(value)
+        }
+    }
+
     var stringValue: String? {
         switch self {
         case .string(let value): return value
@@ -47,13 +59,31 @@ nonisolated enum JSONValue: Decodable, Hashable, Sendable {
 }
 
 /// Atlassian Document Format node. Descriptions and comments in the v3 API
-/// are ADF trees rather than wiki markup.
-nonisolated struct ADFNode: Decodable, Hashable, Sendable {
+/// are ADF trees rather than wiki markup. Encodes back to the same shape,
+/// leaving out fields that are nil, so a tree can be edited and sent back.
+nonisolated struct ADFNode: Codable, Hashable, Sendable {
     let type: String
     let text: String?
     let attrs: [String: JSONValue]?
     let marks: [ADFMark]?
     let content: [ADFNode]?
+
+    init(type: String, text: String? = nil, attrs: [String: JSONValue]? = nil, marks: [ADFMark]? = nil, content: [ADFNode]? = nil) {
+        self.type = type
+        self.text = text
+        self.attrs = attrs
+        self.marks = marks
+        self.content = content
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(type, forKey: .type)
+        try container.encodeIfPresent(text, forKey: .text)
+        try container.encodeIfPresent(attrs, forKey: .attrs)
+        try container.encodeIfPresent(marks, forKey: .marks)
+        try container.encodeIfPresent(content, forKey: .content)
+    }
 
     func attr(_ name: String) -> String? { attrs?[name]?.stringValue }
     func intAttr(_ name: String) -> Int? { attrs?[name]?.intValue }
@@ -65,6 +95,12 @@ nonisolated struct ADFNode: Decodable, Hashable, Sendable {
         if type == "text" { return text ?? "" }
         if type == "hardBreak" { return "\n" }
         if type == "mention" || type == "emoji" { return attr("text") ?? "" }
+        if type == "inlineCard" {
+            // Issue cards read as their key; other cards as their address.
+            guard let url = attr("url") else { return "" }
+            if let match = url.firstMatch(of: /\/browse\/([A-Za-z][A-Za-z0-9_]*-[0-9]+)/) { return String(match.1).uppercased() }
+            return url
+        }
         let inner = children.map(\.plainText)
         switch type {
         case "paragraph", "heading", "listItem", "codeBlock", "blockquote":
@@ -75,9 +111,20 @@ nonisolated struct ADFNode: Decodable, Hashable, Sendable {
     }
 }
 
-nonisolated struct ADFMark: Decodable, Hashable, Sendable {
+nonisolated struct ADFMark: Codable, Hashable, Sendable {
     let type: String
     let attrs: [String: JSONValue]?
+
+    init(type: String, attrs: [String: JSONValue]? = nil) {
+        self.type = type
+        self.attrs = attrs
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(type, forKey: .type)
+        try container.encodeIfPresent(attrs, forKey: .attrs)
+    }
 
     func attr(_ name: String) -> String? { attrs?[name]?.stringValue }
 }

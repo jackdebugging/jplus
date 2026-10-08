@@ -455,8 +455,9 @@ enum ADFInline {
             case "emoji":
                 result += AttributedString(node.attr("text") ?? node.attr("shortName") ?? "")
             case "inlineCard":
+                // Issue cards read as their key, the way Jira draws them; other cards show their address.
                 let urlString = node.attr("url") ?? ""
-                var card = AttributedString(urlString)
+                var card = AttributedString(node.plainText.isEmpty ? urlString : node.plainText)
                 card.link = URL(string: urlString)
                 result += card
             case "status":

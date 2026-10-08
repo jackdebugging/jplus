@@ -684,6 +684,18 @@ struct JiraClient: Sendable {
         _ = try await sendData(request)
     }
 
+    /// For edits that answer with the updated resource, like Confluence pages.
+    func put<T: Decodable>(_ path: String, json: [String: Any]) async throws -> T {
+        var request = makeRequest(path: path, method: "PUT")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: json)
+        return try await send(request)
+    }
+
+    func delete(_ path: String) async throws {
+        _ = try await sendData(makeRequest(path: path, method: "DELETE"))
+    }
+
     /// Atlassian's GraphQL gateway on the site domain accepts the same Basic auth.
     func graphQL<T: Decodable>(operationName: String, query: String, variables: [String: Any], experimentalAPIs: [String] = [], headers: [String: String] = [:]) async throws -> T {
         var request = makeRequest(path: "/gateway/api/graphql", method: "POST")

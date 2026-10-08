@@ -11,6 +11,7 @@ struct HomeView: View {
     enum SidebarItem: Hashable {
         case myIssues
         case mentions
+        case priorities
         case version(VersionRoute)
         case account
         case search
@@ -166,6 +167,8 @@ struct HomeView: View {
                     .tag(SidebarItem.myIssues)
                 Label("Mentions", systemImage: "at")
                     .tag(SidebarItem.mentions)
+                Label("Daily Priorities", systemImage: "checklist")
+                    .tag(SidebarItem.priorities)
 
                 if !recentKeys.isEmpty {
                     Section("Recent Issues") {
@@ -358,6 +361,8 @@ struct HomeView: View {
             MyIssuesView(onOpenIssue: pushIssue)
         case .mentions:
             MentionsView(user: user, onOpenIssue: pushIssue)
+        case .priorities:
+            PrioritiesView(onOpenIssue: pushIssue)
         case .account:
             AccountView(user: user)
         case .search:
@@ -434,6 +439,7 @@ struct HomeView: View {
         let sidebar: SavedPlace.Screen = switch selection {
         case .myIssues: .myIssues
         case .mentions: .mentions
+        case .priorities: .priorities
         case .account: .account
         case .search: .search
         case .versions: .versions
@@ -486,6 +492,7 @@ struct HomeView: View {
         switch screen {
         case .myIssues: return .myIssues
         case .mentions: return .mentions
+        case .priorities: return .priorities
         case .account: return .account
         case .search: return .search
         case .versions: return .versions

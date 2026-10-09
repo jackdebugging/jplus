@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Settings › Text Size: ten steps around macOS's standard 13-point text.
@@ -10,9 +11,23 @@ enum TextSize {
     static let bodyPointSizes: [CGFloat] = [10, 11, 12, 13, 14, 15, 16, 18, 20, 22]
     /// 13 pt, the size macOS uses everywhere.
     static let standardStep = 3
+    static var largestStep: Int { bodyPointSizes.count - 1 }
 
     static func clamped(_ step: Int) -> Int {
-        min(max(step, 0), bodyPointSizes.count - 1)
+        min(max(step, 0), largestStep)
+    }
+
+    /// ⌘= makes text bigger too, as in Safari. The View menu's ⌘+ only
+    /// answers to ⇧⌘= on keyboards where + shares the = key.
+    static func installEqualsShortcut() {
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+                  event.charactersIgnoringModifiers == "=" else { return event }
+            let defaults = UserDefaults.standard
+            let step = defaults.object(forKey: storageKey) as? Int ?? standardStep
+            defaults.set(clamped(step + 1), forKey: storageKey)
+            return nil
+        }
     }
 
     static func pointSize(forStep step: Int) -> CGFloat {

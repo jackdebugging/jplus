@@ -6,6 +6,10 @@ struct JPlusApp: App {
     @State private var settings = SettingsStore()
     @AppStorage(TextSize.storageKey) private var textSizeStep = TextSize.standardStep
 
+    init() {
+        TextSize.installEqualsShortcut()
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()
@@ -36,6 +40,18 @@ struct JPlusApp: App {
                 }
                 .keyboardShortcut("k", modifiers: .command)
                 .disabled(!session.isSignedIn)
+            }
+            CommandGroup(after: .toolbar) {
+                Divider()
+                Button("Make Text Bigger") { textSizeStep = TextSize.clamped(textSizeStep + 1) }
+                    .keyboardShortcut("+", modifiers: .command)
+                    .disabled(textSizeStep >= TextSize.largestStep)
+                Button("Make Text Smaller") { textSizeStep = TextSize.clamped(textSizeStep - 1) }
+                    .keyboardShortcut("-", modifiers: .command)
+                    .disabled(textSizeStep <= 0)
+                Button("Make Text Standard Size") { textSizeStep = TextSize.standardStep }
+                    .keyboardShortcut("0", modifiers: .command)
+                    .disabled(textSizeStep == TextSize.standardStep)
             }
             CommandGroup(after: .appSettings) {
                 Button("Switch Account…") { session.signOut() }

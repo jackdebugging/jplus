@@ -31,7 +31,7 @@ struct TextSizeSection: View {
         Section {
             Slider(
                 value: Binding(get: { Double(TextSize.clamped(step)) }, set: { step = Int($0.rounded()) }),
-                in: 0...Double(TextSize.bodyPointSizes.count - 1),
+                in: 0...Double(TextSize.largestStep),
                 step: 1
             ) {
                 Text("Size")
@@ -77,6 +77,9 @@ struct ShortcutInfo: Identifiable {
                      detail: "Type a key like VPE-5555, a title or a version name"),
         ShortcutInfo(keys: ["⇧", "⌘", "O"], title: "Open the current view in Jira",
                      detail: "An issue, search, My Issues, Mentions or a version"),
+        ShortcutInfo(keys: ["⌘", "+"], title: "Make text bigger", detail: "⌘= works too"),
+        ShortcutInfo(keys: ["⌘", "−"], title: "Make text smaller"),
+        ShortcutInfo(keys: ["⌘", "0"], title: "Make text the standard size"),
     ]
 }
 

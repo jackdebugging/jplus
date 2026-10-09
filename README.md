@@ -20,7 +20,7 @@ A native macOS client for Jira Cloud, built with SwiftUI. Besides browsing, it c
 - [x] Edit an issue's title, description, status, priority, assignee, reporter and team; add comments
 - [x] Comments shown as threads; reply to a comment
 - [x] Settings: clear downloaded and cached data
-- [x] Settings: Text Size slider with ten sizes, from 10 to 22 pt
+- [x] Settings: Text Size slider with ten sizes, from 10 to 22 pt; ⌘+ (or ⌘=), ⌘− and ⌘0 in the View menu
 - [x] Versions per project with progress, drilling into each version's issues; Hide completed and Only show App Team toggles, and a button that opens the filtered list in Jira
 - [x] New Ticket: drop/paste/choose a screenshot, create the issue, attach the image
 - [x] Optional Draft with Claude: summary, description and type proposed from the screenshot
@@ -321,6 +321,10 @@ segmented controls keep macOS's own label sizes and step between small,
 regular and large controls instead; sidebar rows step between the system's
 small, medium and large sidebar sizes. The Settings window itself stays at
 the standard size.
+
+The View menu steps the same setting: Make Text Bigger (⌘+, or ⌘= without
+Shift, as in Safari), Make Text Smaller (⌘−) and Make Text Standard Size
+(⌘0).
 
 ## Versions
 

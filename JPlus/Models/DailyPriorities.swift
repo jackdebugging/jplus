@@ -34,6 +34,24 @@ nonisolated struct PriorityDay: Identifiable, Hashable, Sendable {
     }
 }
 
+/// A day page found under the folder, before its body is loaded.
+nonisolated struct PriorityDayRef: Identifiable, Hashable, Sendable {
+    let pageID: String
+    let title: String
+    let day: Date
+    let monthFolderID: String
+
+    var id: String { pageID }
+
+    /// Works for any page id, without knowing the space key.
+    func webURL(on siteURL: URL) -> URL {
+        var components = URLComponents(url: siteURL, resolvingAgainstBaseURL: false)!
+        components.path = "/wiki/pages/viewpage.action"
+        components.queryItems = [URLQueryItem(name: "pageId", value: pageID)]
+        return components.url!
+    }
+}
+
 /// How days and months are named in Confluence: `2026-10` folders holding
 /// `2026-10-07` pages, in the Mac's calendar and time zone.
 nonisolated enum PriorityNaming {

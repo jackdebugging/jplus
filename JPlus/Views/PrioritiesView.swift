@@ -2,7 +2,8 @@ import SwiftUI
 
 /// The team's daily priorities, kept as one Confluence page per day under a
 /// shared folder (a `yyyy-MM` folder per month, a `yyyy-MM-dd` page per
-/// day). Today's list is editable here; every day is editable in Confluence.
+/// day). The main pane shows the selected day, with earlier days loaded
+/// below it on request; the day list on the right holds every day.
 struct PrioritiesView: View {
     let onOpenIssue: (String) -> Void
 
@@ -10,6 +11,7 @@ struct PrioritiesView: View {
     @Environment(\.openURL) private var openURL
     /// Link to (or id of) the root folder, per account.
     @AppStorage("prioritiesFolderURL") private var folderInput = ""
+    @AppStorage("prioritiesShowsDayList") private var showsDayList = true
     @State private var model = PrioritiesModel()
     @State private var newText = ""
     @State private var isChoosingFolder = false
@@ -18,6 +20,9 @@ struct PrioritiesView: View {
     @State private var isFindingFolder = false
     /// The search ran and found nothing to use; the user picks instead.
     @State private var findFailureMessage: String?
+    @State private var isPickingNewDay = false
+    @State private var newDayDate = Date()
+    @State private var copiesOpenItems = false
     @FocusState private var isAddFieldFocused: Bool
 
     private var folderID: String? { PriorityNaming.folderID(from: folderInput) }
@@ -26,6 +31,21 @@ struct PrioritiesView: View {
         content
             .navigationTitle("Daily Priorities")
             .toolbar {
+                ToolbarItemGroup(placement: .primaryAction) {
+                    Button("New Day", systemImage: "calendar.badge.plus") {
+                        newDayDate = Date()
+                        copiesOpenItems = false
+                        isPickingNewDay = true
+                    }
+                    .help("Start a day's priorities")
+                    .disabled(model.folder == nil)
+                    .popover(isPresented: $isPickingNewDay, arrowEdge: .bottom) { newDayPicker }
+                    Button(showsDayList ? "Hide Days" : "Show Days", systemImage: "sidebar.right") {
+                        showsDayList.toggle()
+                    }
+                    .help(showsDayList ? "Hide the list of days" : "Show the list of days")
+                    .disabled(folderID == nil)
+                }
                 ToolbarItemGroup(placement: .secondaryAction) {
                     Button("Refresh", systemImage: "arrow.clockwise") { Task { await model.reload() } }
                         .keyboardShortcut("r", modifiers: .command)
@@ -41,6 +61,10 @@ struct PrioritiesView: View {
                         .help("Open the Daily Priorities folder in Confluence (⇧⌘O)")
                     }
                 }
+            }
+            .inspector(isPresented: Binding(get: { showsDayList && folderID != nil }, set: { showsDayList = $0 })) {
+                PriorityDayList(model: model)
+                    .inspectorColumnWidth(min: 180, ideal: 220, max: 320)
             }
             .task(id: folderID) {
                 guard let client = session.client else { return }
@@ -104,7 +128,7 @@ struct PrioritiesView: View {
                     if let client = session.client { Task { await findFolder(using: client) } }
                 }
             }
-        } else if let message = model.errorMessage, model.days.isEmpty {
+        } else if let message = model.errorMessage, model.index.isEmpty, model.folder == nil {
             ContentUnavailableView {
                 Label("Couldn't Load Priorities", systemImage: "exclamationmark.triangle")
             } description: {
@@ -115,10 +139,23 @@ struct PrioritiesView: View {
         } else if model.isLoading && !model.hasLoaded {
             ProgressView("Loading priorities…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if model.index.isEmpty {
+            ContentUnavailableView {
+                Label("No Days Yet", systemImage: "checklist")
+            } description: {
+                Text("Start today's page to list the team's priorities.")
+            } actions: {
+                Button("New Day…") {
+                    newDayDate = Date()
+                    isPickingNewDay = true
+                }
+            }
         } else {
             days
         }
     }
+
+    // MARK: - Days
 
     private var days: some View {
         ScrollView {
@@ -129,15 +166,29 @@ struct PrioritiesView: View {
                         .foregroundStyle(.orange)
                         .textSelection(.enabled)
                 }
-                todaySection
-                ForEach(model.days.filter { $0.title != model.todayTitle }) { day in
-                    daySection(day)
+                if model.todayRef == nil {
+                    HStack(spacing: 8) {
+                        Image(systemName: "sun.max").foregroundStyle(.secondary)
+                        Text("There's no page for today yet.").foregroundStyle(.secondary)
+                        Button("Start Today") {
+                            Task { await model.createDay(Date()) }
+                        }
+                        .disabled(model.isCreatingDay)
+                    }
+                    .font(.callout)
                 }
-                if model.hasMore {
-                    Button("Show Earlier Days") { Task { await model.showMore() } }
-                        .buttonStyle(.borderless)
-                        .disabled(model.isLoading)
+                ForEach(model.shownDays) { day in
+                    daySection(day, isSelected: day.pageID == model.selectedID)
                 }
+                if let loading = model.shownIDs.first(where: model.loadingPageIDs.contains),
+                   let ref = model.index.first(where: { $0.pageID == loading }) {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small)
+                        Text("Loading \(ref.title)…").foregroundStyle(.secondary)
+                    }
+                    .font(.callout)
+                }
+                previousDayButton
             }
             .frame(maxWidth: 820, alignment: .leading)
             .padding(24)
@@ -145,111 +196,157 @@ struct PrioritiesView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    // MARK: - Today
-
-    private var todaySection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            dayHeader(title: "Today", day: Date(), page: model.today)
-            if let today = model.today {
-                itemRows(today)
-            } else if model.isCreatingToday {
-                HStack(spacing: 6) {
-                    ProgressView().controlSize(.small)
-                    Text("Starting today's page…").foregroundStyle(.secondary)
-                }
+    @ViewBuilder
+    private var previousDayButton: some View {
+        if let previous = model.previousRef {
+            Button {
+                Task { await model.loadPrevious() }
+            } label: {
+                Label("Load Previous Day (\(longDate(previous.day)))", systemImage: "arrow.down.circle")
+            }
+            .buttonStyle(.borderless)
+            .disabled(!model.loadingPageIDs.isEmpty)
+            .help("Show \(previous.title) below")
+        } else if !model.shownIDs.isEmpty {
+            Text("No earlier days.")
                 .font(.callout)
-            } else {
-                Text("Nothing yet. Add the first priority to start today's page.")
+                .foregroundStyle(.tertiary)
+        }
+    }
+
+    private func daySection(_ day: PriorityDay, isSelected: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            dayHeader(day)
+            if day.items.isEmpty {
+                Text(isSelected ? "Nothing listed yet." : "No priorities were listed.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
-            }
-            HStack(spacing: 8) {
-                Image(systemName: "plus")
-                    .foregroundStyle(.secondary)
-                    .frame(width: 16)
-                TextField("Add a priority…", text: $newText, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .lineLimit(1...4)
-                    .focused($isAddFieldFocused)
-                    .onSubmit(addItem)
-            }
-            .padding(.top, 2)
-            if model.today == nil, let previous = model.days.first, previous.openCount > 0 {
-                Button("Carry Over \(previous.openCount) Open from \(dayLabel(previous.day))") {
-                    Task { await model.carryOverOpenItems() }
+            } else {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(day.items) { item in
+                        PriorityItemRow(
+                            item: item,
+                            day: day,
+                            canMoveToToday: model.todayRef.map { $0.pageID != day.pageID } ?? false,
+                            isBusy: model.busyItemIDs.contains(item.id),
+                            model: model
+                        )
+                    }
                 }
-                .buttonStyle(.borderless)
-                .font(.callout)
-                .disabled(model.isCreatingToday)
+            }
+            if isSelected {
+                addField(for: day)
             }
         }
     }
 
-    private func addItem() {
+    private func dayHeader(_ day: PriorityDay) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(dayLabel(day.day))
+                .font(.title3.weight(.semibold))
+            Text(longDate(day.day))
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            if !day.items.isEmpty {
+                Text("\(day.items.count - day.openCount) of \(day.items.count) done")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(.quaternary.opacity(0.6), in: Capsule())
+            }
+            Spacer(minLength: 8)
+            Button("Open in Confluence", systemImage: "arrow.up.right.square") { openURL(day.webURL) }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
+                .foregroundStyle(.secondary)
+                .help("Open \(day.title) in Confluence")
+        }
+    }
+
+    private func addField(for day: PriorityDay) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "plus")
+                .foregroundStyle(.secondary)
+                .frame(width: 16)
+            TextField("Add a priority…", text: $newText, axis: .vertical)
+                .textFieldStyle(.plain)
+                .lineLimit(1...4)
+                .focused($isAddFieldFocused)
+                .onSubmit { add(to: day) }
+        }
+        .padding(.top, 2)
+    }
+
+    private func add(to day: PriorityDay) {
         let text = newText
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         newText = ""
         Task {
-            await model.add(text)
+            await model.add(text, to: day)
             isAddFieldFocused = true
         }
     }
 
-    // MARK: - Days
+    // MARK: - New day
 
-    private func daySection(_ day: PriorityDay) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            dayHeader(title: dayLabel(day.day), day: day.day, page: day)
-            if day.items.isEmpty {
-                Text("No priorities were listed.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            } else {
-                itemRows(day)
-            }
-        }
-    }
-
-    private func dayHeader(title: String, day: Date, page: PriorityDay?) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(title)
-                .font(.title3.weight(.semibold))
-            Text(day.formatted(.dateTime.weekday(.wide).month(.wide).day()))
-                .font(.callout)
-                .foregroundStyle(.secondary)
-            if let page {
-                let done = page.items.count - page.openCount
-                if !page.items.isEmpty {
-                    Text("\(done) of \(page.items.count) done")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(.quaternary.opacity(0.6), in: Capsule())
+    private var newDayPicker: some View {
+        let existing = model.ref(for: newDayDate)
+        let source = model.dayBefore(newDayDate)
+        return VStack(alignment: .leading, spacing: 12) {
+            Text("New Day")
+                .font(.headline)
+            DatePicker("Date", selection: $newDayDate, displayedComponents: .date)
+                .datePickerStyle(.graphical)
+                .labelsHidden()
+            if let existing {
+                HStack(spacing: 6) {
+                    Label("\(existing.title) already exists.", systemImage: "exclamationmark.circle")
+                        .foregroundStyle(.orange)
+                    Button("Open It") {
+                        isPickingNewDay = false
+                        Task { await model.select(existing.pageID) }
+                    }
+                    .buttonStyle(.link)
                 }
-                Spacer(minLength: 8)
-                Button("Open in Confluence", systemImage: "arrow.up.right.square") { openURL(page.webURL) }
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(.secondary)
-                    .help("Open \(page.title) in Confluence")
+                .font(.callout)
+            } else if let source {
+                Toggle("Copy unfinished items from \(longDate(source.day))", isOn: $copiesOpenItems)
+                    .font(.callout)
+            }
+            HStack {
+                Spacer()
+                Button("Cancel") { isPickingNewDay = false }
+                Button("Create \(PriorityNaming.dayTitle(for: newDayDate))") {
+                    let date = newDayDate
+                    let copyFrom = copiesOpenItems ? source : nil
+                    isPickingNewDay = false
+                    Task { await model.createDay(date, copyingFrom: copyFrom) }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(existing != nil || model.isCreatingDay)
             }
         }
+        .padding(16)
+        .frame(width: 300)
     }
 
-    private func itemRows(_ day: PriorityDay) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ForEach(day.items) { item in
-                PriorityItemRow(item: item, day: day, isToday: day.title == model.todayTitle, isBusy: model.busyItemIDs.contains(item.id), model: model)
-            }
-        }
-    }
+    // MARK: - Labels
 
     private func dayLabel(_ day: Date) -> String {
         let calendar = Calendar.current
         if calendar.isDateInToday(day) { return "Today" }
         if calendar.isDateInYesterday(day) { return "Yesterday" }
+        if calendar.isDateInTomorrow(day) { return "Tomorrow" }
         return day.formatted(.dateTime.weekday(.wide))
+    }
+
+    /// "Wednesday, October 7", with the year when it isn't this year.
+    private func longDate(_ day: Date) -> String {
+        if Calendar.current.isDate(day, equalTo: Date(), toGranularity: .year) {
+            return day.formatted(.dateTime.weekday(.wide).month(.wide).day())
+        }
+        return day.formatted(.dateTime.weekday(.wide).month(.wide).day().year())
     }
 
     // MARK: - Folder
@@ -283,11 +380,63 @@ struct PrioritiesView: View {
     }
 }
 
+/// Every day under the folder, newest first and grouped by month, shown
+/// on the right. Picking one shows it on its own in the main pane.
+private struct PriorityDayList: View {
+    let model: PrioritiesModel
+
+    @Environment(SessionStore.self) private var session
+    @Environment(\.openURL) private var openURL
+
+    private var months: [(key: String, value: [PriorityDayRef])] {
+        Dictionary(grouping: model.index) { PriorityNaming.monthTitle(for: $0.day) }
+            .sorted { $0.key > $1.key }
+    }
+
+    var body: some View {
+        List(selection: Binding(
+            get: { model.selectedID },
+            set: { id in if let id { Task { await model.select(id) } } }
+        )) {
+            ForEach(months, id: \.key) { _, days in
+                Section(days[0].day.formatted(.dateTime.month(.wide).year())) {
+                    ForEach(days) { ref in
+                        HStack(spacing: 6) {
+                            Text(ref.day.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()))
+                            Spacer(minLength: 4)
+                            if ref.title == model.todayTitle {
+                                Text("Today")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .tag(ref.pageID)
+                        .help(ref.title)
+                        .contextMenu {
+                            if let client = session.client {
+                                Button("Open in Confluence", systemImage: "safari") {
+                                    openURL(ref.webURL(on: client.credentials.siteURL))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .overlay {
+            if model.isLoading && model.index.isEmpty {
+                ProgressView()
+            }
+        }
+    }
+}
+
 /// One checkbox line. Double-click (or Edit… in the menu) to change its text.
 private struct PriorityItemRow: View {
     let item: PriorityItem
     let day: PriorityDay
-    let isToday: Bool
+    /// Today has a page and this item is on another day.
+    let canMoveToToday: Bool
     let isBusy: Bool
     let model: PrioritiesModel
 
@@ -332,7 +481,7 @@ private struct PriorityItemRow: View {
             Button(item.isDone ? "Mark Not Done" : "Mark Done", systemImage: item.isDone ? "square" : "checkmark.square") {
                 model.setDone(!item.isDone, item: item, in: day)
             }
-            if !isToday {
+            if canMoveToToday {
                 Button("Move to Today", systemImage: "arrow.uturn.forward") {
                     Task { await model.moveToToday(item, from: day) }
                 }

@@ -134,16 +134,23 @@ The first time the screen opens it searches the site for a folder called
 it; if there isn't exactly one, it asks you to paste the folder's link
 (toolbar > Choose Folder… changes it later). Inside it each month is a
 `yyyy-MM` folder and each day a `yyyy-MM-dd` page whose body is a native
-Confluence task list. The screen shows Today
-first, then earlier days, 14 at a time (Show Earlier Days for more).
+Confluence task list.
+
+The main pane shows one day, today by default. Load Previous Day at the
+bottom adds the next earlier day below it, as many times as you like. The
+list on the right (toolbar > Show Days) has every day, newest first and
+grouped by month; picking one shows it on its own. New Day in the toolbar
+picks a date, today by default, and creates that day's page inside its
+month folder, making the folder when it's the month's first day. A date
+that already has a page can't be created again; the picker says so and
+offers to open it. It can also copy the unfinished items from the most
+recent earlier day.
 
 Tick a box to finish an item, double-click (or Edit…) to change its text,
 right-click for Mark Done, Move to Today, Copy Text and Delete. Type in
-"Add a priority…" and press Return to add; the first item of a day creates
-the day's page, and the month's folder when it's the first day of the month.
-Carry Over copies the previous day's unfinished items onto today. Typed
-issue keys become issue cards and typed web addresses become links; issue
-cards for this site open in the app.
+"Add a priority…" under the top day and press Return to add. Typed issue
+keys become issue cards and typed web addresses become links; issue cards
+for this site open in the app.
 
 Every edit re-reads the page, applies the change to the current version and
 saves; if someone saved in between, Confluence answers 409 and the edit is

@@ -120,8 +120,9 @@ final class CommandPaletteModel {
         return titles
     }
 
-    /// Runs for the current query. Call after a short debounce.
-    func search(defaultProjectKey: String?, client: JiraClient) async -> [PaletteIssue] {
+    /// Runs for the current query. Call after a short debounce. A bare number is
+    /// tried as a key in each of `projectKeys`, most likely first.
+    func search(projectKeys: [String], client: JiraClient) async -> [PaletteIssue] {
         generation += 1
         let myGeneration = generation
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -148,13 +149,13 @@ final class CommandPaletteModel {
         searchError = nil
         defer { if myGeneration == generation { isSearching = false } }
 
-        // An exact key ("vpe-5636", or "5636" in the current project) goes first.
-        var exactKey = IssueKey.parse(text)
-        if exactKey == nil, let project = defaultProjectKey, text.allSatisfy(\.isNumber) {
-            exactKey = "\(project.uppercased())-\(text)"
+        // An exact key ("vpe-5636", or "5636" in any recent project) goes first.
+        var exactKeys = IssueKey.parse(text).map { [$0] } ?? []
+        if exactKeys.isEmpty, text.allSatisfy(\.isNumber) {
+            exactKeys = projectKeys.map { "\($0.uppercased())-\(text)" }
         }
 
-        async let exactMatch: [IssueSummary] = Self.lookup(key: exactKey, client: client)
+        async let exactMatch: [IssueSummary] = Self.lookup(keys: exactKeys, client: client)
         async let textMatches: Result<[IssueSummary], Error> = Self.textSearch(text, isKey: IssueKey.parse(text) != nil, client: client)
         let (exact, found) = await (exactMatch, textMatches)
 
@@ -210,8 +211,20 @@ final class CommandPaletteModel {
         }
     }
 
-    private static func lookup(key: String?, client: JiraClient) async -> [IssueSummary] {
-        guard let key else { return [] }
+    /// Each key on its own request, for the same reason as `details`; found
+    /// issues keep the order of `keys`.
+    private static func lookup(keys: [String], client: JiraClient) async -> [IssueSummary] {
+        await withTaskGroup(of: (Int, [IssueSummary]).self) { group in
+            for (index, key) in keys.enumerated() {
+                group.addTask { (index, await lookup(key: key, client: client)) }
+            }
+            var found: [(Int, [IssueSummary])] = []
+            for await result in group { found.append(result) }
+            return found.sorted { $0.0 < $1.0 }.flatMap(\.1)
+        }
+    }
+
+    private static func lookup(key: String, client: JiraClient) async -> [IssueSummary] {
         // A key that doesn't exist makes Jira reject the JQL; that just means no match.
         return (try? await client.search(jql: "key = \"\(key)\"", maxResults: 1).issues) ?? []
     }

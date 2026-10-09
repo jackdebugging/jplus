@@ -178,8 +178,8 @@ changed issues every couple of minutes, and rebuilt weekly.
 
 Press ⌘K (Go menu, or the magnifying glass in the toolbar) and start typing:
 
-- an issue key (`vpe-5636`), or just the number (`5636`) for the project of
-  your most recent issue;
+- an issue key (`vpe-5636`), or just the number (`5636`), which is tried in
+  the projects of your recent issues (most recent first, up to five);
 - a few words from a title (prefix search, so `leaderb` finds "leaderboard");
 - a version name (`v1.17`), which lists matching versions first.
 

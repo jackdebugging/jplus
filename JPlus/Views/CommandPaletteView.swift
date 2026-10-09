@@ -4,7 +4,8 @@ import SwiftUI
 /// the highlighted result.
 struct CommandPaletteView: View {
     @Bindable var model: CommandPaletteModel
-    let defaultProjectKey: String?
+    /// Projects a bare number is tried in, most recent first; versions use the first.
+    let projectKeys: [String]
     let onOpen: (PaletteItem) -> Void
     let onClose: () -> Void
 
@@ -46,7 +47,7 @@ struct CommandPaletteView: View {
             // Debounce typing before asking Jira.
             try? await Task.sleep(for: .milliseconds(220))
             guard !Task.isCancelled, let client = session.client else { return }
-            let found = await model.search(defaultProjectKey: defaultProjectKey, client: client)
+            let found = await model.search(projectKeys: projectKeys, client: client)
             rememberTitles(found)
         }
     }
@@ -135,8 +136,10 @@ struct CommandPaletteView: View {
             hint("↩", "open")
             hint("esc", "close")
             Spacer()
-            if let project = defaultProjectKey {
-                Text("Numbers and versions use \(project)")
+            if let project = projectKeys.first {
+                Text(projectKeys.count > 1
+                     ? "Numbers check \(projectKeys.joined(separator: ", ")) · versions use \(project)"
+                     : "Numbers and versions use \(project)")
                     .foregroundStyle(.tertiary)
             }
         }

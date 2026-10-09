@@ -62,8 +62,14 @@ struct HomeView: View {
     }
 
     /// Project key of the most recently viewed issue, used as a default elsewhere.
-    private var recentProjectKey: String? {
-        recentKeys.first?.split(separator: "-").first.map(String.init)
+    private var recentProjectKey: String? { recentProjectKeys.first }
+
+    /// Projects of recently opened issues, most recent first.
+    private var recentProjectKeys: [String] {
+        var seen = Set<String>()
+        return recentKeys
+            .compactMap { $0.split(separator: "-").first.map(String.init) }
+            .filter { seen.insert($0).inserted }
     }
 
     var body: some View {
@@ -133,7 +139,8 @@ struct HomeView: View {
                         .onTapGesture(perform: closePalette)
                     CommandPaletteView(
                         model: palette,
-                        defaultProjectKey: recentProjectKey,
+                        // One lookup per project for each number typed, so keep the list short.
+                        projectKeys: Array(recentProjectKeys.prefix(5)),
                         onOpen: openFromPalette,
                         onClose: closePalette
                     )

@@ -74,7 +74,7 @@ struct VersionsView: View {
     @ViewBuilder
     private var content: some View {
         if let errorMessage {
-            ContentUnavailableView {
+            ScaledContentUnavailableView {
                 Label("Couldn't Load Versions", systemImage: "exclamationmark.triangle")
             } description: {
                 Text(errorMessage)
@@ -82,16 +82,16 @@ struct VersionsView: View {
                 Button("Try Again") { Task { await loadVersions() } }
             }
         } else if projectKey.isEmpty {
-            ContentUnavailableView("Choose a Project", systemImage: "shippingbox",
-                                   description: Text("Versions are listed per project."))
+            ScaledContentUnavailableView("Choose a Project", systemImage: "shippingbox",
+                                         description: Text("Versions are listed per project."))
         } else if isLoadingVersions && versions.isEmpty {
             ProgressView("Loading versions…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if versions.isEmpty {
-            ContentUnavailableView("No Versions", systemImage: "shippingbox",
-                                   description: Text("\(projectKey) has no versions yet."))
+            ScaledContentUnavailableView("No Versions", systemImage: "shippingbox",
+                                         description: Text("\(projectKey) has no versions yet."))
         } else if unreleased.isEmpty && !showReleased && !showArchived {
-            ContentUnavailableView {
+            ScaledContentUnavailableView {
                 Label("No Unreleased Versions", systemImage: "shippingbox")
             } description: {
                 Text("\(projectKey) has \(released.count) released versions.")
@@ -114,7 +114,7 @@ struct VersionsView: View {
     @ViewBuilder
     private func section(_ title: String, _ items: [JiraVersion]) -> some View {
         if !items.isEmpty, let project {
-            Section("\(title) (\(items.count))") {
+            Section {
                 ForEach(items) { version in
                     Button {
                         onOpenVersion(VersionRoute(version: version, project: project))
@@ -123,6 +123,8 @@ struct VersionsView: View {
                     }
                     .buttonStyle(.plain)
                 }
+            } header: {
+                ScaledSectionHeader(title: Text("\(title) (\(items.count))"))
             }
         }
     }
@@ -183,7 +185,7 @@ private struct VersionRow: View {
                         Text("\(counts.done) of \(counts.total) done")
                     }
                 }
-                .font(.caption)
+                .scaledFont(.caption)
                 .foregroundStyle(.secondary)
                 if let counts = version.issuesStatusForFixVersion, counts.total > 0 {
                     VersionProgressBar(counts: counts)
@@ -193,7 +195,7 @@ private struct VersionRow: View {
             }
             Spacer()
             Image(systemName: "chevron.right")
-                .font(.caption.weight(.semibold))
+                .scaledFont(.caption.weight(.semibold))
                 .foregroundStyle(.tertiary)
         }
         .padding(.vertical, 4)
@@ -212,7 +214,7 @@ struct VersionStateBadge: View {
 
     var body: some View {
         Text(style.0)
-            .font(.caption2.weight(.bold))
+            .scaledFont(.caption2.weight(.bold))
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .background(style.1.opacity(0.18), in: RoundedRectangle(cornerRadius: 4))

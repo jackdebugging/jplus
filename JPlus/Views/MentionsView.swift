@@ -33,7 +33,7 @@ struct MentionsView: View {
     @ViewBuilder
     private var content: some View {
         if let message = model.errorMessage, model.mentions.isEmpty {
-            ContentUnavailableView {
+            ScaledContentUnavailableView {
                 Label("Couldn't Load Mentions", systemImage: "exclamationmark.triangle")
             } description: {
                 Text(message)
@@ -44,12 +44,12 @@ struct MentionsView: View {
             ProgressView("Finding your mentions…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if model.mentions.isEmpty {
-            ContentUnavailableView("No Mentions", systemImage: "at",
-                                   description: Text("Nobody has @-mentioned you in a ticket or comment yet."))
+            ScaledContentUnavailableView("No Mentions", systemImage: "at",
+                                         description: Text("Nobody has @-mentioned you in a ticket or comment yet."))
         } else {
             List {
                 ForEach(groupedByDay, id: \.day) { group in
-                    Section(Self.dayTitle(group.day)) {
+                    Section {
                         ForEach(group.mentions) { mention in
                             Button {
                                 onOpenIssue(mention.issueKey)
@@ -61,6 +61,8 @@ struct MentionsView: View {
                             .help("Open \(mention.issueKey)")
                             .contextMenu { menu(for: mention) }
                         }
+                    } header: {
+                        ScaledSectionHeader(title: Text(Self.dayTitle(group.day)))
                     }
                 }
                 if model.canLoadMore || model.isLoading {
@@ -159,27 +161,27 @@ private struct MentionRow: View {
                 HStack(spacing: 4) {
                     Text(mention.author?.displayName ?? "Someone").fontWeight(.semibold)
                     Text(placeText).foregroundStyle(.secondary)
-                    Text(mention.issueKey).font(.callout.monospaced()).foregroundStyle(.secondary)
+                    Text(mention.issueKey).scaledFont(.callout.monospaced()).foregroundStyle(.secondary)
                     Spacer(minLength: 8)
                     Text(mention.date.formatted(date: .omitted, time: .shortened))
-                        .font(.caption)
+                        .scaledFont(.caption)
                         .foregroundStyle(.secondary)
                         .help(mention.date.formatted(date: .complete, time: .shortened))
                 }
-                .font(.callout)
+                .scaledFont(.callout)
                 .lineLimit(1)
 
                 HStack(spacing: 6) {
-                    IssueTypeBadge(name: mention.typeName, iconOnly: true).font(.caption)
+                    IssueTypeBadge(name: mention.typeName, iconOnly: true).scaledFont(.caption)
                     Text(mention.issueSummary)
-                        .font(.callout.weight(.medium))
+                        .scaledFont(.callout.weight(.medium))
                         .lineLimit(1)
                     StatusBadge(status: mention.status).scaleEffect(0.8, anchor: .leading)
                 }
 
                 // Excerpts are already trimmed around the mention; show them whole.
                 Text(highlighted(mention.excerpt))
-                    .font(.callout)
+                    .scaledFont(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }

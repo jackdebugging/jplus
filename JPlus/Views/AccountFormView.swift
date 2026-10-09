@@ -66,7 +66,7 @@ struct AccountFormView: View {
                     AppIconView(size: 80)
                 }
                 Text(title)
-                    .font(mode == .firstAccount ? .title.weight(.semibold) : .title2.weight(.semibold))
+                    .scaledFont(mode == .firstAccount ? .title.weight(.semibold) : .title2.weight(.semibold))
                 Text(subtitle)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -85,7 +85,7 @@ struct AccountFormView: View {
                     .textContentType(.password)
 
                 Link("Create an API token…", destination: Self.tokenHelpURL)
-                    .font(.callout)
+                    .scaledFont(.callout)
             }
             .formStyle(.grouped)
             .scrollDisabled(true)
@@ -97,7 +97,7 @@ struct AccountFormView: View {
             if let errorMessage {
                 Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.red)
-                    .font(.callout)
+                    .scaledFont(.callout)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 440)
                     .fixedSize(horizontal: false, vertical: true)

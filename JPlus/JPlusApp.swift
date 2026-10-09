@@ -4,12 +4,14 @@ import SwiftUI
 struct JPlusApp: App {
     @State private var session = SessionStore()
     @State private var settings = SettingsStore()
+    @AppStorage(TextSize.storageKey) private var textSizeStep = TextSize.standardStep
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environment(session)
                 .environment(settings)
+                .textSize(step: textSizeStep)
                 .task { await settings.load() }
                 .task { await session.restore() }
                 .frame(minWidth: 480, minHeight: 360)

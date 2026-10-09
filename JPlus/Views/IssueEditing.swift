@@ -69,7 +69,7 @@ private struct ErrorLabel: View {
 
     var body: some View {
         Label(message, systemImage: "exclamationmark.triangle")
-            .font(.caption)
+            .scaledFont(.caption)
             .foregroundStyle(.orange)
             .fixedSize(horizontal: false, vertical: true)
     }
@@ -79,7 +79,7 @@ private struct ErrorLabel: View {
 private struct WikiMarkupHint: View {
     var body: some View {
         Text("*bold*  _italic_  h2. Heading  * bullet  # numbered  [text|url]  {code}…{code}")
-            .font(.caption.monospaced())
+            .scaledFont(.caption.monospaced())
             .foregroundStyle(.tertiary)
             .lineLimit(1)
             .truncationMode(.tail)
@@ -111,7 +111,7 @@ struct EditableSummary: View {
         if isEditing {
             VStack(alignment: .leading, spacing: 8) {
                 TextField("Summary", text: $draft, axis: .vertical)
-                    .font(.title2.weight(.semibold))
+                    .scaledFont(.title2.weight(.semibold))
                     .textFieldStyle(.plain)
                     .padding(6)
                     .background(RoundedRectangle(cornerRadius: 6).strokeBorder(.tint, lineWidth: 2))
@@ -135,7 +135,7 @@ struct EditableSummary: View {
         } else {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(issue.fields.summary)
-                    .font(.title2.weight(.semibold))
+                    .scaledFont(.title2.weight(.semibold))
                     .textSelection(.enabled)
                 Button { start() } label: {
                     Image(systemName: "pencil").foregroundStyle(.secondary)
@@ -193,7 +193,7 @@ struct IssueStatusButton: View {
             HStack(spacing: 4) {
                 StatusBadge(status: issue.fields.status)
                 Image(systemName: "chevron.down")
-                    .font(.caption2.weight(.bold))
+                    .scaledFont(.caption2.weight(.bold))
                     .foregroundStyle(.secondary)
             }
             .padding(3)
@@ -267,7 +267,7 @@ private struct TransitionPicker: View {
             // Workflows sometimes name a move differently from where it leads.
             if transition.name.caseInsensitiveCompare(transition.to.name) != .orderedSame {
                 Text(transition.name)
-                    .font(.caption)
+                    .scaledFont(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -532,7 +532,7 @@ private struct PersonPicker: View {
                 Text(person.accountId == session.currentUser?.accountId ? "\(person.displayName) (me)" : person.displayName)
                     .lineLimit(1)
                 if let email = person.emailAddress {
-                    Text(email).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Text(email).scaledFont(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
             Spacer(minLength: 4)
@@ -603,7 +603,7 @@ struct TeamLabel: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "person.2.fill")
-                .font(.caption)
+                .scaledFont(.caption)
                 .foregroundStyle(.secondary)
                 .frame(width: 20, height: 20)
                 .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 5))
@@ -785,7 +785,7 @@ struct DescriptionSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("Description").font(.headline)
+                Text("Description").scaledFont(.headline)
                 Spacer()
                 if isLoading {
                     ProgressView().controlSize(.small)
@@ -811,7 +811,7 @@ struct DescriptionSection: View {
     private var editor: some View {
         VStack(alignment: .leading, spacing: 8) {
             TextEditor(text: $draft)
-                .font(.body.monospaced())
+                .scaledFont(.body.monospaced())
                 .scrollContentBackground(.hidden)
                 .focused($isFocused)
                 .disabled(isSaving)
@@ -890,7 +890,7 @@ struct CommentsSection: View {
     var body: some View {
         let all = all
         VStack(alignment: .leading, spacing: 10) {
-            Text("Comments (\(comments?.count ?? issue.fields.comment?.total ?? all.count))").font(.headline)
+            Text("Comments (\(comments?.count ?? issue.fields.comment?.total ?? all.count))").scaledFont(.headline)
             VStack(alignment: .leading, spacing: 18) {
                 if all.isEmpty {
                     Text("No comments").foregroundStyle(.secondary)
@@ -962,13 +962,13 @@ private struct CommentView: View {
                         Text("(edited)").foregroundStyle(.tertiary)
                     }
                 }
-                .font(.callout)
+                .scaledFont(.callout)
                 if let body = comment.body {
                     ADFView(node: body)
                 }
                 Button("Reply", systemImage: "arrowshape.turn.up.left", action: onReply)
                     .buttonStyle(.borderless)
-                    .font(.caption)
+                    .scaledFont(.caption)
                     .foregroundStyle(.secondary)
                     .help("Reply in this thread")
             }
@@ -1007,7 +1007,7 @@ struct CommentComposer: View {
             VStack(alignment: .leading, spacing: 8) {
                 ZStack(alignment: .topLeading) {
                     TextEditor(text: $draft)
-                        .font(.body)
+                        .scaledFont(.body)
                         .scrollContentBackground(.hidden)
                         .focused($isFocused)
                         .disabled(isPosting)
@@ -1042,7 +1042,7 @@ struct CommentComposer: View {
                         if isReply {
                             // Replies go through a different Jira API, which takes plain text.
                             Text("Plain text  ·  - bullet  ·  1. numbered")
-                                .font(.caption)
+                                .scaledFont(.caption)
                                 .foregroundStyle(.tertiary)
                                 .lineLimit(1)
                                 .help("Replies are sent as plain text; wiki markup isn't converted")

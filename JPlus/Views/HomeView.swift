@@ -396,8 +396,8 @@ struct HomeView: View {
             ProgressView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         case nil:
-            ContentUnavailableView("Nothing Selected", systemImage: "sidebar.left",
-                                   description: Text("Pick something in the sidebar, or press ⌘K to jump to an issue."))
+            ScaledContentUnavailableView("Nothing Selected", systemImage: "sidebar.left",
+                                         description: Text("Pick something in the sidebar, or press ⌘K to jump to an issue."))
         }
     }
 

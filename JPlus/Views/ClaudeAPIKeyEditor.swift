@@ -33,7 +33,7 @@ struct ClaudeAPIKeyEditor: View {
                 Spacer()
                 Link("Get an API key…", destination: Self.consoleURL)
             }
-            .font(.callout)
+            .scaledFont(.callout)
         }
         .task {
             await settings.load()

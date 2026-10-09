@@ -32,7 +32,7 @@ struct MyIssuesView: View {
     @ViewBuilder
     private var content: some View {
         if let message = query.errorMessage {
-            ContentUnavailableView {
+            ScaledContentUnavailableView {
                 Label("Couldn't Load Your Issues", systemImage: "exclamationmark.triangle")
             } description: {
                 Text(message)
@@ -43,8 +43,8 @@ struct MyIssuesView: View {
             ProgressView("Loading your issues…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if query.hasRun && query.issues.isEmpty {
-            ContentUnavailableView("Nothing Assigned", systemImage: "checkmark.circle",
-                                   description: Text("You have no open issues assigned to you."))
+            ScaledContentUnavailableView("Nothing Assigned", systemImage: "checkmark.circle",
+                                         description: Text("You have no open issues assigned to you."))
         } else {
             VStack(spacing: 0) {
                 IssueListView(issues: query.issues, onOpen: onOpenIssue)

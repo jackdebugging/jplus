@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingsView: View {
     var body: some View {
         Form {
+            TextSizeSection()
             Section {
                 ClaudeAPIKeyEditor()
             } header: {
@@ -16,6 +17,48 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .frame(width: 480)
+    }
+}
+
+/// Slider for the main window's text size, with a sample at the chosen size.
+struct TextSizeSection: View {
+    @AppStorage(TextSize.storageKey) private var step = TextSize.standardStep
+
+    private var pointSize: Int { Int(TextSize.pointSize(forStep: step)) }
+    private var scale: CGFloat { TextSize.scale(forStep: step) }
+
+    var body: some View {
+        Section {
+            Slider(
+                value: Binding(get: { Double(TextSize.clamped(step)) }, set: { step = Int($0.rounded()) }),
+                in: 0...Double(TextSize.bodyPointSizes.count - 1),
+                step: 1
+            ) {
+                Text("Size")
+            } minimumValueLabel: {
+                Image(systemName: "textformat.size.smaller")
+                    .accessibilityLabel("Smaller")
+            } maximumValueLabel: {
+                Image(systemName: "textformat.size.larger")
+                    .accessibilityLabel("Larger")
+            }
+            .accessibilityValue("\(pointSize) points")
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("VPE-1234  Update the release notes")
+                    .font(ScaledFont.body.font(scale: scale))
+                Text("In Progress · updated 2 hours ago")
+                    .font(ScaledFont.caption.font(scale: scale))
+                    .foregroundStyle(.secondary)
+            }
+            .lineLimit(1)
+            .accessibilityHidden(true)
+        } header: {
+            Text("Text Size")
+        } footer: {
+            Text(step == TextSize.standardStep ? "\(pointSize) pt, the macOS standard." : "\(pointSize) pt. The macOS standard is 13 pt.")
+                .foregroundStyle(.secondary)
+        }
     }
 }
 

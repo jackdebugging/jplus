@@ -29,7 +29,7 @@ struct StatusBadge: View {
 
     var body: some View {
         Text(status.name.uppercased())
-            .font(.caption.weight(.bold))
+            .scaledFont(.caption.weight(.bold))
             .lineLimit(1)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
@@ -61,7 +61,7 @@ struct IssueTypeBadge: View {
                 Label(name, systemImage: symbol.0)
             }
         }
-        .font(.callout)
+        .scaledFont(.callout)
         .foregroundStyle(symbol.1)
         .help(name)
     }
@@ -93,7 +93,7 @@ struct TagList: View {
         FlowLayout(spacing: 6) {
             ForEach(items, id: \.self) { item in
                 Text(item)
-                    .font(.caption)
+                    .scaledFont(.caption)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
                     .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 4))

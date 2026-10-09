@@ -57,11 +57,11 @@ struct CommandPaletteView: View {
     private var searchField: some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
-                .font(.title3)
+                .scaledFont(.title3)
                 .foregroundStyle(.secondary)
             TextField("Issue key, words from a title, or a version", text: $model.query)
                 .textFieldStyle(.plain)
-                .font(.title3)
+                .scaledFont(.title3)
                 .focused($fieldFocused)
                 .onSubmit(openHighlighted)
                 .onKeyPress(.downArrow) { move(1); return .handled }
@@ -93,7 +93,7 @@ struct CommandPaletteView: View {
                     Text("No matching issues or versions.").foregroundStyle(.secondary)
                 }
             }
-            .font(.callout)
+            .scaledFont(.callout)
             .multilineTextAlignment(.center)
             .frame(maxWidth: .infinity)
             .padding(24)
@@ -105,7 +105,7 @@ struct CommandPaletteView: View {
                         let offsets = sectionOffsets(sections)
                         ForEach(Array(sections.enumerated()), id: \.element.id) { sectionIndex, section in
                             Text(section.title)
-                                .font(.caption.weight(.semibold))
+                                .scaledFont(.caption.weight(.semibold))
                                 .foregroundStyle(.secondary)
                                 .padding(.horizontal, 16)
                                 .padding(.top, sectionIndex == 0 ? 8 : 12)
@@ -143,7 +143,7 @@ struct CommandPaletteView: View {
                     .foregroundStyle(.tertiary)
             }
         }
-        .font(.caption)
+        .scaledFont(.caption)
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
     }
@@ -151,7 +151,7 @@ struct CommandPaletteView: View {
     private func hint(_ key: String, _ label: String) -> some View {
         HStack(spacing: 4) {
             Text(key)
-                .font(.caption.monospaced())
+                .scaledFont(.caption.monospaced())
                 .padding(.horizontal, 5)
                 .padding(.vertical, 1)
                 .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 4))
@@ -207,7 +207,7 @@ private struct PaletteRow: View {
                 }
                 .frame(width: 18)
                 Text(issue.key)
-                    .font(.callout.monospaced())
+                    .scaledFont(.callout.monospaced())
                     .foregroundStyle(.secondary)
                     .frame(minWidth: 80, alignment: .leading)
                 Text(issue.summary ?? "Open \(issue.key)")
@@ -224,12 +224,12 @@ private struct PaletteRow: View {
                 Text(route.version.name)
                     .fontWeight(.medium)
                 Text(route.project.key)
-                    .font(.callout)
+                    .scaledFont(.callout)
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 8)
                 if let day = route.version.releaseDay {
                     Text(day.formatted(date: .abbreviated, time: .omitted))
-                        .font(.caption)
+                        .scaledFont(.caption)
                         .foregroundStyle(.secondary)
                 }
                 VersionStateBadge(version: route.version)
@@ -256,12 +256,12 @@ private struct PalettePreview: View {
             case .issue(let issue):
                 HStack(spacing: 8) {
                     if let type = issue.typeName { IssueTypeBadge(name: type) }
-                    Text(issue.key).font(.callout.monospaced()).foregroundStyle(.secondary)
+                    Text(issue.key).scaledFont(.callout.monospaced()).foregroundStyle(.secondary)
                     Spacer()
                     if let status = issue.status { StatusBadge(status: status) }
                 }
                 Text(issue.summary ?? "Title not loaded yet. Press Return to open \(issue.key).")
-                    .font(.headline)
+                    .scaledFont(.headline)
                     .foregroundStyle(issue.summary == nil ? .secondary : .primary)
                     .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
@@ -272,15 +272,15 @@ private struct PalettePreview: View {
                             Label("Updated \(updated.formatted(.relative(presentation: .named)))", systemImage: "clock")
                         }
                     }
-                    .font(.caption)
+                    .scaledFont(.caption)
                     .foregroundStyle(.secondary)
                 }
             case .version(let route):
                 HStack(spacing: 8) {
-                    Text(route.version.name).font(.headline)
+                    Text(route.version.name).scaledFont(.headline)
                     VersionStateBadge(version: route.version)
                     Spacer()
-                    Text(route.project.name).font(.callout).foregroundStyle(.secondary)
+                    Text(route.project.name).scaledFont(.callout).foregroundStyle(.secondary)
                 }
                 HStack(spacing: 12) {
                     if let day = route.version.releaseDay {
@@ -290,7 +290,7 @@ private struct PalettePreview: View {
                         Label("\(counts.done) of \(counts.total) issues done", systemImage: "checklist")
                     }
                 }
-                .font(.caption)
+                .scaledFont(.caption)
                 .foregroundStyle(.secondary)
                 if let counts = route.version.issuesStatusForFixVersion, counts.total > 0 {
                     VersionProgressBar(counts: counts)

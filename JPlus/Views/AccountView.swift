@@ -17,7 +17,7 @@ struct AccountView: View {
 
             VStack(spacing: 4) {
                 Text(user.displayName)
-                    .font(.title2.weight(.semibold))
+                    .scaledFont(.title2.weight(.semibold))
                 if let email = user.emailAddress {
                     Text(email).foregroundStyle(.secondary)
                 }
@@ -29,7 +29,7 @@ struct AccountView: View {
                 detailRow("Time zone", user.timeZone ?? "—")
                 detailRow("Status", (user.active ?? true) ? "Active" : "Inactive")
             }
-            .font(.callout)
+            .scaledFont(.callout)
             .padding()
             .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
 
@@ -38,9 +38,9 @@ struct AccountView: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 Label("Draft with Claude", systemImage: "sparkles")
-                    .font(.headline)
+                    .scaledFont(.headline)
                 Text("Screenshot parsing on the New Ticket screen uses this Claude API key. It is stored in your Keychain and only used when you press Draft with Claude.")
-                    .font(.callout)
+                    .scaledFont(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 ClaudeAPIKeyEditor()

@@ -115,7 +115,7 @@ struct PrioritiesView: View {
             ProgressView("Finding the team's Daily Priorities folder…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if folderID == nil {
-            ContentUnavailableView {
+            ScaledContentUnavailableView {
                 Label("Choose a Daily Priorities Folder", systemImage: "checklist")
             } description: {
                 Text((findFailureMessage.map { $0 + " " } ?? "") + "Paste the link to the Confluence folder that holds the team's daily lists. Each month gets a folder inside it and each day a page.")
@@ -129,7 +129,7 @@ struct PrioritiesView: View {
                 }
             }
         } else if let message = model.errorMessage, model.index.isEmpty, model.folder == nil {
-            ContentUnavailableView {
+            ScaledContentUnavailableView {
                 Label("Couldn't Load Priorities", systemImage: "exclamationmark.triangle")
             } description: {
                 Text(message)
@@ -140,7 +140,7 @@ struct PrioritiesView: View {
             ProgressView("Loading priorities…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if model.index.isEmpty {
-            ContentUnavailableView {
+            ScaledContentUnavailableView {
                 Label("No Days Yet", systemImage: "checklist")
             } description: {
                 Text("Start today's page to list the team's priorities.")
@@ -162,7 +162,7 @@ struct PrioritiesView: View {
             VStack(alignment: .leading, spacing: 28) {
                 if let message = model.errorMessage {
                     Label(message, systemImage: "exclamationmark.triangle")
-                        .font(.callout)
+                        .scaledFont(.callout)
                         .foregroundStyle(.orange)
                         .textSelection(.enabled)
                 }
@@ -175,7 +175,7 @@ struct PrioritiesView: View {
                         }
                         .disabled(model.isCreatingDay)
                     }
-                    .font(.callout)
+                    .scaledFont(.callout)
                 }
                 ForEach(model.shownDays) { day in
                     daySection(day, isSelected: day.pageID == model.selectedID)
@@ -186,7 +186,7 @@ struct PrioritiesView: View {
                         ProgressView().controlSize(.small)
                         Text("Loading \(ref.title)…").foregroundStyle(.secondary)
                     }
-                    .font(.callout)
+                    .scaledFont(.callout)
                 }
                 previousDayButton
             }
@@ -209,7 +209,7 @@ struct PrioritiesView: View {
             .help("Show \(previous.title) below")
         } else if !model.shownIDs.isEmpty {
             Text("No earlier days.")
-                .font(.callout)
+                .scaledFont(.callout)
                 .foregroundStyle(.tertiary)
         }
     }
@@ -219,7 +219,7 @@ struct PrioritiesView: View {
             dayHeader(day)
             if day.items.isEmpty {
                 Text(isSelected ? "Nothing listed yet." : "No priorities were listed.")
-                    .font(.callout)
+                    .scaledFont(.callout)
                     .foregroundStyle(.secondary)
             } else {
                 VStack(alignment: .leading, spacing: 6) {
@@ -243,13 +243,13 @@ struct PrioritiesView: View {
     private func dayHeader(_ day: PriorityDay) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(dayLabel(day.day))
-                .font(.title3.weight(.semibold))
+                .scaledFont(.title3.weight(.semibold))
             Text(longDate(day.day))
-                .font(.callout)
+                .scaledFont(.callout)
                 .foregroundStyle(.secondary)
             if !day.items.isEmpty {
                 Text("\(day.items.count - day.openCount) of \(day.items.count) done")
-                    .font(.caption)
+                    .scaledFont(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
@@ -295,7 +295,7 @@ struct PrioritiesView: View {
         let source = model.dayBefore(newDayDate)
         return VStack(alignment: .leading, spacing: 12) {
             Text("New Day")
-                .font(.headline)
+                .scaledFont(.headline)
             DatePicker("Date", selection: $newDayDate, displayedComponents: .date)
                 .datePickerStyle(.graphical)
                 .labelsHidden()
@@ -309,10 +309,10 @@ struct PrioritiesView: View {
                     }
                     .buttonStyle(.link)
                 }
-                .font(.callout)
+                .scaledFont(.callout)
             } else if let source {
                 Toggle("Copy unfinished items from \(longDate(source.day))", isOn: $copiesOpenItems)
-                    .font(.callout)
+                    .scaledFont(.callout)
             }
             HStack {
                 Spacer()
@@ -354,9 +354,9 @@ struct PrioritiesView: View {
     private var folderChooser: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Daily Priorities Folder")
-                .font(.headline)
+                .scaledFont(.headline)
             Text("Paste the Confluence folder's link, e.g. …/wiki/spaces/VPE1/folder/123456.")
-                .font(.callout)
+                .scaledFont(.callout)
                 .foregroundStyle(.secondary)
             TextField("Folder link", text: $folderDraft)
                 .textFieldStyle(.roundedBorder)
@@ -399,14 +399,14 @@ private struct PriorityDayList: View {
             set: { id in if let id { Task { await model.select(id) } } }
         )) {
             ForEach(months, id: \.key) { _, days in
-                Section(days[0].day.formatted(.dateTime.month(.wide).year())) {
+                Section {
                     ForEach(days) { ref in
                         HStack(spacing: 6) {
                             Text(ref.day.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()))
                             Spacer(minLength: 4)
                             if ref.title == model.todayTitle {
                                 Text("Today")
-                                    .font(.caption.weight(.semibold))
+                                    .scaledFont(.caption.weight(.semibold))
                                     .foregroundStyle(.secondary)
                             }
                         }
@@ -420,6 +420,8 @@ private struct PriorityDayList: View {
                             }
                         }
                     }
+                } header: {
+                    ScaledSectionHeader(title: Text(days[0].day.formatted(.dateTime.month(.wide).year())))
                 }
             }
         }
@@ -443,6 +445,7 @@ private struct PriorityItemRow: View {
     @State private var isEditing = false
     @State private var draft = ""
     @FocusState private var isFocused: Bool
+    @Environment(\.textSizeScale) private var textScale
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -464,7 +467,7 @@ private struct PriorityItemRow: View {
                     .onExitCommand { isEditing = false }
                     .onChange(of: isFocused) { if !isFocused { commitEdit() } }
             } else {
-                Text(ADFInline.attributedString(item.content))
+                Text(ADFInline.attributedString(item.content, textScale: textScale))
                     .strikethrough(item.isDone)
                     .foregroundStyle(item.isDone ? .secondary : .primary)
                     .textSelection(.enabled)

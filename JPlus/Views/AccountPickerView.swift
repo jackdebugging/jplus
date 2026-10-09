@@ -49,7 +49,7 @@ struct AccountPickerView: View {
                 VStack(spacing: 6) {
                     AppIconView(size: 80)
                     Text("Choose an Account")
-                        .font(.title.weight(.semibold))
+                        .scaledFont(.title.weight(.semibold))
                     Text("Pick a saved Jira login. Nothing needs to be re-entered.")
                         .foregroundStyle(.secondary)
                 }
@@ -57,7 +57,7 @@ struct AccountPickerView: View {
                 if let notice = session.notice {
                     Label(notice, systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
-                        .font(.callout)
+                        .scaledFont(.callout)
                         .multilineTextAlignment(.leading)
                         .frame(maxWidth: 520, alignment: .leading)
                         .fixedSize(horizontal: false, vertical: true)
@@ -139,22 +139,22 @@ private struct AccountRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(account.label).fontWeight(.medium)
                 Text("\(account.credentials.email) · \(account.credentials.siteHost)")
-                    .font(.callout)
+                    .scaledFont(.callout)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 if account.tokenRejected {
                     Label("API token no longer works. Edit to replace it.", systemImage: "key.slash")
-                        .font(.caption)
+                        .scaledFont(.caption)
                         .foregroundStyle(.orange)
                 } else if let error {
                     Label(error, systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption)
+                        .scaledFont(.caption)
                         .foregroundStyle(.red)
                         .fixedSize(horizontal: false, vertical: true)
                 } else if let lastUsed = account.lastUsedAt {
                     Text("Last used \(lastUsed.formatted(.relative(presentation: .named)))")
-                        .font(.caption)
+                        .scaledFont(.caption)
                         .foregroundStyle(.tertiary)
                 }
             }

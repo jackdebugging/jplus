@@ -133,7 +133,7 @@ struct VersionDetailView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
-                Text(version.name).font(.title2.weight(.semibold))
+                Text(version.name).scaledFont(.title2.weight(.semibold))
                 VersionStateBadge(version: version)
             }
             if let description = nonEmpty(version.description) ?? highlights?.description {
@@ -147,7 +147,7 @@ struct VersionDetailView: View {
                     Label("Release \(release.formatted(date: .abbreviated, time: .omitted))", systemImage: "flag.checkered")
                 }
             }
-            .font(.callout)
+            .scaledFont(.callout)
             .foregroundStyle(.secondary)
 
             if let counts = version.issuesStatusForFixVersion, counts.total > 0 {
@@ -162,7 +162,7 @@ struct VersionDetailView: View {
                         Text("\(Int((counts.doneFraction * 100).rounded()))%")
                             .fontWeight(.medium)
                     }
-                    .font(.caption)
+                    .scaledFont(.caption)
                     .foregroundStyle(.secondary)
                 }
             }
@@ -178,7 +178,7 @@ struct VersionDetailView: View {
         if let highlights, highlights.hasContent, let content = highlights.content {
             Divider().padding(.vertical, 4)
             Text(nonEmpty(highlights.title) ?? "Version highlights")
-                .font(.headline)
+                .scaledFont(.headline)
             ADFView(node: content)
                 .frame(maxWidth: 820, alignment: .leading)
                 .environment(\.openURL, OpenURLAction { url in
@@ -196,11 +196,11 @@ struct VersionDetailView: View {
                 ProgressView().controlSize(.small)
                 Text("Loading version highlights…").foregroundStyle(.secondary)
             }
-            .font(.callout)
+            .scaledFont(.callout)
         } else if let highlightsError {
             Divider().padding(.vertical, 4)
             Label(highlightsError, systemImage: "exclamationmark.triangle")
-                .font(.callout)
+                .scaledFont(.callout)
                 .foregroundStyle(.orange)
                 .textSelection(.enabled)
         }
@@ -239,7 +239,7 @@ struct VersionDetailView: View {
     @ViewBuilder
     private var issues: some View {
         if let message = query.errorMessage {
-            ContentUnavailableView {
+            ScaledContentUnavailableView {
                 Label("Couldn't Load Issues", systemImage: "exclamationmark.triangle")
             } description: {
                 Text(message)
@@ -251,8 +251,8 @@ struct VersionDetailView: View {
             ProgressView("Loading issues…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if query.hasRun && query.issues.isEmpty && !hideCompleted && !onlyAppTeam {
-            ContentUnavailableView("No Issues", systemImage: "shippingbox",
-                                   description: Text("Nothing has this fix version yet."))
+            ScaledContentUnavailableView("No Issues", systemImage: "shippingbox",
+                                         description: Text("Nothing has this fix version yet."))
         } else {
             VStack(spacing: 0) {
                 IssueListView(issues: shownIssues, onOpen: onOpenIssue) {
@@ -286,8 +286,8 @@ struct VersionDetailView: View {
                 // An overlay rather than its own branch, so the toggles stay on screen to turn back off.
                 .overlay {
                     if onlyAppTeam, let appTeamError {
-                        ContentUnavailableView("Couldn't Load \(Self.appTeamName)", systemImage: "exclamationmark.triangle",
-                                               description: Text(appTeamError))
+                        ScaledContentUnavailableView("Couldn't Load \(Self.appTeamName)", systemImage: "exclamationmark.triangle",
+                                                     description: Text(appTeamError))
                             .allowsHitTesting(false)
                     } else if hideCompleted || onlyAppTeam, query.hasRun, !query.isLoading, shownIssues.isEmpty {
                         emptyFilteredView.allowsHitTesting(false)
@@ -307,14 +307,14 @@ struct VersionDetailView: View {
     private var emptyFilteredView: some View {
         let outsideTeam = "issues assigned outside \(Self.appTeamName)"
         if !onlyAppTeam {
-            ContentUnavailableView("No Open Issues", systemImage: "checkmark.circle",
-                                   description: Text("Completed issues are hidden."))
+            ScaledContentUnavailableView("No Open Issues", systemImage: "checkmark.circle",
+                                         description: Text("Completed issues are hidden."))
         } else if hideCompleted {
-            ContentUnavailableView("No Open Issues", systemImage: "checkmark.circle",
-                                   description: Text("Completed issues and \(outsideTeam) are hidden."))
+            ScaledContentUnavailableView("No Open Issues", systemImage: "checkmark.circle",
+                                         description: Text("Completed issues and \(outsideTeam) are hidden."))
         } else {
-            ContentUnavailableView("No \(Self.appTeamName) Issues", systemImage: "person.2",
-                                   description: Text("Unassigned issues and \(outsideTeam) are hidden."))
+            ScaledContentUnavailableView("No \(Self.appTeamName) Issues", systemImage: "person.2",
+                                         description: Text("Unassigned issues and \(outsideTeam) are hidden."))
         }
     }
 

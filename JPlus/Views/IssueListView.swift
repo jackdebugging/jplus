@@ -54,6 +54,7 @@ struct IssueListView<FilterAccessory: View>: View {
 
     @Environment(SessionStore.self) private var session
     @Environment(\.openURL) private var openURL
+    @Environment(\.textSizeScale) private var textScale
     @State private var selection: Set<IssueSummary.ID> = []
     @State private var sortOrder = [IssueSummarySortComparator(column: .updated, order: .reverse)]
     @State private var filterText = ""
@@ -118,7 +119,7 @@ struct IssueListView<FilterAccessory: View>: View {
 
             if filterExpanded, !filterText.isEmpty {
                 Text("\(displayedIssues.count) of \(issues.count)")
-                    .font(.caption)
+                    .scaledFont(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize()
             }
@@ -133,12 +134,13 @@ struct IssueListView<FilterAccessory: View>: View {
             TableColumn("", sortUsing: IssueSummarySortComparator(column: .issueType)) { issue in
                 IssueTypeBadge(name: issue.fields.issueType.name, iconOnly: true)
             }
-            .width(24)
+            // Icons and keys grow with Text Size so keys stay whole; Summary takes what's left.
+            .width(24 * textScale)
 
             TableColumn("Key", sortUsing: IssueSummarySortComparator(column: .key)) { issue in
                 Text(issue.key).monospaced()
             }
-            .width(min: 80, ideal: 100, max: 140)
+            .width(min: 80 * textScale, ideal: 100 * textScale, max: 140 * textScale)
 
             TableColumn("Summary", sortUsing: IssueSummarySortComparator(column: .summary)) { issue in
                 Text(issue.fields.summary).lineLimit(1).help(issue.fields.summary)
@@ -226,7 +228,7 @@ struct IssueListFooter: View {
             }
             Spacer()
         }
-        .font(.callout)
+        .scaledFont(.callout)
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
         .background(.bar)

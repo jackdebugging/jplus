@@ -88,7 +88,7 @@ struct NewTicketView: View {
                 if let errorMessage {
                     Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.red)
-                        .font(.callout)
+                        .scaledFont(.callout)
                         .textSelection(.enabled)
                 }
             }
@@ -139,12 +139,12 @@ struct NewTicketView: View {
                 } else {
                     VStack(spacing: 8) {
                         Image(systemName: "photo.badge.plus")
-                            .font(.system(size: 34))
+                            .scaledFont(.system(size: 34))
                             .foregroundStyle(.secondary)
                         Text("Drop a screenshot here")
-                            .font(.headline)
+                            .scaledFont(.headline)
                         Text("or paste with ⌘V, or choose a file. Tip: ⌃⇧⌘4 captures a region to the clipboard.")
-                            .font(.callout)
+                            .scaledFont(.callout)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
                     }
@@ -163,7 +163,7 @@ struct NewTicketView: View {
                 if let screenshot {
                     Button("Remove", systemImage: "xmark.circle") { self.screenshot = nil }
                     Text("\(screenshot.filename) · \(screenshot.sizeDescription)")
-                        .font(.caption)
+                        .scaledFont(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -238,7 +238,7 @@ struct NewTicketView: View {
             GridRow(alignment: .top) {
                 label("Description").padding(.top, 6)
                 TextEditor(text: $description)
-                    .font(.body)
+                    .scaledFont(.body)
                     .frame(minHeight: 160)
                     .padding(4)
                     .background(Color(nsColor: .textBackgroundColor))
@@ -254,7 +254,7 @@ struct NewTicketView: View {
                             .labelsHidden()
                             .lineLimit(2...5)
                         Text("Not sent to Jira; only used when drafting.")
-                            .font(.caption)
+                            .scaledFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -306,7 +306,7 @@ struct NewTicketView: View {
             if let progress {
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.small)
-                    Text(progress).font(.callout).foregroundStyle(.secondary)
+                    Text(progress).scaledFont(.callout).foregroundStyle(.secondary)
                 }
             }
 

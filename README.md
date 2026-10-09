@@ -20,6 +20,7 @@ A native macOS client for Jira Cloud, built with SwiftUI. Besides browsing, it c
 - [x] Edit an issue's title, description, status, priority, assignee, reporter and team; add comments
 - [x] Comments shown as threads; reply to a comment
 - [x] Settings: clear downloaded and cached data
+- [x] Settings: Text Size slider with ten sizes, from 10 to 22 pt
 - [x] Versions per project with progress, drilling into each version's issues; Hide completed and Only show App Team toggles, and a button that opens the filtered list in Jira
 - [x] New Ticket: drop/paste/choose a screenshot, create the issue, attach the image
 - [x] Optional Draft with Claude: summary, description and type proposed from the screenshot
@@ -309,6 +310,18 @@ ticket titles, and cached network responses such as avatars. Accounts and
 tokens, recent tickets, search history, project choices and the Claude API
 key are kept. The search index is rebuilt in the background afterwards.
 
+## Text size
+
+Settings > Text Size is a slider with ten steps for the main window's text:
+10, 11, 12, 13 (the macOS standard), 14, 15, 16, 18, 20 and 22 pt for body
+text, with captions and titles scaled to match. macOS ignores Dynamic Type,
+so views use `.scaledFont(.callout)` instead of `.font(.callout)` and empty
+states use `ScaledContentUnavailableView`. Push buttons, pop-up menus and
+segmented controls keep macOS's own label sizes and step between small,
+regular and large controls instead; sidebar rows step between the system's
+small, medium and large sidebar sizes. The Settings window itself stays at
+the standard size.
+
 ## Versions
 
 The header (dates, progress, description and Version highlights) is as tall
@@ -396,7 +409,8 @@ JPlus/
     MyIssuesView.swift      Open issues assigned to you
     MentionsView.swift      @-mentions of you, grouped by day
     NewTicketView.swift     Screenshot well, fields, Draft with Claude, Create
-    SettingsView.swift      Settings window (API key, keyboard shortcuts, storage)
+    SettingsView.swift      Settings window (text size, API key, keyboard shortcuts, storage)
+    TextSize.swift          Text Size steps, .scaledFont, scaled empty states and list headers
     FuzzySearchView.swift   Google-style search page (and the switch to JQL)
     SearchView.swift        Advanced JQL search: presets, history, results
     VersionsView.swift      Project picker + grouped versions with progress bars

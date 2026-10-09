@@ -34,7 +34,7 @@ struct IssueDetailView: View {
                 ProgressView("Loading \(key)…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             case .failed(let message):
-                ContentUnavailableView {
+                ScaledContentUnavailableView {
                     Label("Couldn't Load \(key)", systemImage: "exclamationmark.triangle")
                 } description: {
                     Text(message)
@@ -251,12 +251,12 @@ private struct IssueContentView: View {
             HStack(spacing: 8) {
                 if let parent = fields.parent {
                     ParentBreadcrumb(parent: parent, onOpen: onOpenIssue)
-                    Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+                    Image(systemName: "chevron.right").scaledFont(.caption2).foregroundStyle(.tertiary)
                 }
                 IssueTypeBadge(name: fields.issueType.name)
                     .fixedSize()
                 Text(issue.key)
-                    .font(.callout.monospaced())
+                    .scaledFont(.callout.monospaced())
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
                     .fixedSize()
@@ -270,7 +270,7 @@ private struct IssueContentView: View {
 
     private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(title).font(.headline)
+            Text(title).scaledFont(.headline)
             content()
         }
     }
@@ -295,7 +295,7 @@ private struct IssueDetailsPane: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 HStack {
-                    Text("Details").font(.headline)
+                    Text("Details").scaledFont(.headline)
                     Spacer()
                     IssueStatusButton(issue: issue, onChanged: onChanged)
                 }
@@ -328,7 +328,7 @@ private struct IssueDetailsPane: View {
                         field("Team") { IssueTeamFieldView(issue: issue, field: team, onChanged: onChanged) }
                     }
                 }
-                .font(.callout)
+                .scaledFont(.callout)
 
                 if let promptKind = IssueCursorPromptKind.forIssue(issue) {
                     Divider()
@@ -348,7 +348,7 @@ private struct IssueDetailsPane: View {
         .overlay(alignment: .bottom) {
             if copiedPromptToast {
                 Text("Prompt copied")
-                    .font(.callout.weight(.medium))
+                    .scaledFont(.callout.weight(.medium))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
                     .background(.regularMaterial, in: Capsule())
@@ -374,7 +374,7 @@ private struct IssueDetailsPane: View {
     private func field<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label)
-                .font(.caption.weight(.medium))
+                .scaledFont(.caption.weight(.medium))
                 .foregroundStyle(.secondary)
             content()
         }
@@ -391,7 +391,7 @@ private struct AttachmentList: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Attachments (\(attachments.count))").font(.headline)
+            Text("Attachments (\(attachments.count))").scaledFont(.headline)
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(newestFirst) { attachment in
                     AttachmentRow(attachment: attachment)
@@ -426,7 +426,7 @@ private struct AttachmentRow: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Text(details)
-                        .font(.caption)
+                        .scaledFont(.caption)
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
@@ -434,7 +434,7 @@ private struct AttachmentRow: View {
                     ProgressView().controlSize(.small)
                 }
             }
-            .font(.callout)
+            .scaledFont(.callout)
             .padding(6)
             .contentShape(Rectangle())
             .background(isHovered ? Color.primary.opacity(0.06) : .clear, in: RoundedRectangle(cornerRadius: 6))
@@ -458,7 +458,7 @@ private struct AttachmentRow: View {
                     .aspectRatio(contentMode: .fill)
             } else {
                 Image(systemName: attachment.symbolName)
-                    .font(.title3)
+                    .scaledFont(.title3)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(.quaternary.opacity(0.5))
@@ -570,7 +570,7 @@ private struct FixVersionsPicker: View {
             if let saveError {
                 Divider()
                 Label(saveError, systemImage: "exclamationmark.triangle")
-                    .font(.caption)
+                    .scaledFont(.caption)
                     .foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(10)
@@ -593,7 +593,7 @@ private struct FixVersionsPicker: View {
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "chevron.right")
-                            .font(.caption.weight(.semibold))
+                            .scaledFont(.caption.weight(.semibold))
                             .rotationEffect(.degrees(showsReleased ? 90 : 0))
                             .frame(width: 14)
                         Text("Released (\(releasedVersions.count))")
@@ -626,7 +626,7 @@ private struct FixVersionsPicker: View {
                 ProgressView().controlSize(.mini)
             } else if let day = version.releaseDay {
                 Text(day.formatted(date: .abbreviated, time: .omitted))
-                    .font(.caption)
+                    .scaledFont(.caption)
                     .foregroundStyle(version.overdue == true ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
                     .help(version.overdue == true ? "Overdue: past its release date" : "Release date")
             }
@@ -727,7 +727,7 @@ private struct ChildIssuesSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Text("\(title) (\(children.count)\(isTruncated ? "+" : ""))").font(.headline)
+                Text("\(title) (\(children.count)\(isTruncated ? "+" : ""))").scaledFont(.headline)
                 Spacer()
                 // A partial list would give a misleading percentage.
                 if !isTruncated { progress }
@@ -752,7 +752,7 @@ private struct ChildIssuesSection: View {
             VersionProgressBar(counts: counts)
                 .frame(width: 120, height: 6)
             Text("\(counts.done) of \(counts.total) done")
-                .font(.caption)
+                .scaledFont(.caption)
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
         }
@@ -774,7 +774,7 @@ private struct ChildIssuesSection: View {
                 }
             }
             .buttonStyle(.link)
-            .font(.callout)
+            .scaledFont(.callout)
         }
     }
 }
@@ -792,7 +792,7 @@ private struct ChildIssueRow: View {
                 IssueTypeBadge(name: child.typeName ?? "Issue", iconOnly: true)
                     .frame(width: 18)
                 Text(child.key)
-                    .font(.callout.monospaced())
+                    .scaledFont(.callout.monospaced())
                     .foregroundStyle(.secondary)
                     .fixedSize()
                 Text(child.summary)
@@ -843,7 +843,7 @@ private struct ParentBreadcrumb: View {
                         .truncationMode(.tail)
                 }
             }
-            .font(.callout)
+            .scaledFont(.callout)
             .foregroundStyle(isHovered ? .primary : .secondary)
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
@@ -873,7 +873,7 @@ private struct ParentCard: View {
                     if let typeName = parent.fields?.issueType?.name {
                         IssueTypeBadge(name: typeName, iconOnly: true)
                     }
-                    Text(parent.key).font(.callout.monospaced())
+                    Text(parent.key).scaledFont(.callout.monospaced())
                     Spacer(minLength: 4)
                     if let status = parent.fields?.status {
                         StatusBadge(status: status)
@@ -932,7 +932,7 @@ private struct IssueCursorPromptButton: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Actions")
-                .font(.caption.weight(.medium))
+                .scaledFont(.caption.weight(.medium))
                 .foregroundStyle(.secondary)
             Button(action: action) {
                 Label(kind.buttonTitle, systemImage: kind.systemImage)
@@ -953,7 +953,7 @@ private struct DesignRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: "pencil.and.ruler.fill")
-                .font(.title3)
+                .scaledFont(.title3)
                 .foregroundStyle(.purple)
                 .frame(width: 36, height: 36)
                 .background(.purple.opacity(0.15), in: RoundedRectangle(cornerRadius: 8))
@@ -968,7 +968,7 @@ private struct DesignRow: View {
                         ReadyForDevBadge()
                     }
                 }
-                .font(.caption)
+                .scaledFont(.caption)
             }
             Spacer(minLength: 12)
             if let inspectURL = design.inspectURL, inspectURL != design.url {
@@ -997,7 +997,7 @@ private struct DesignRow: View {
 private struct ReadyForDevBadge: View {
     var body: some View {
         Label("Ready for dev", systemImage: "chevron.left.forwardslash.chevron.right")
-            .font(.caption.weight(.semibold))
+            .scaledFont(.caption.weight(.semibold))
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .background(Color.green.opacity(0.18), in: RoundedRectangle(cornerRadius: 4))

@@ -69,7 +69,7 @@ struct JQLSearchView: View {
         HStack(spacing: 8) {
             TextField("JQL", text: $jql, prompt: Text("Type a JQL query, or pick a preset from the clock menu"))
                 .textFieldStyle(.roundedBorder)
-                .font(.body.monospaced())
+                .scaledFont(.body.monospaced())
                 .focused($fieldFocused)
                 .onSubmit { Task { await run() } }
 
@@ -112,7 +112,7 @@ struct JQLSearchView: View {
     @ViewBuilder
     private var results: some View {
         if let message = query.errorMessage {
-            ContentUnavailableView {
+            ScaledContentUnavailableView {
                 Label("Search Failed", systemImage: "exclamationmark.triangle")
             } description: {
                 Text(message)
@@ -123,8 +123,8 @@ struct JQLSearchView: View {
             ProgressView("Searching…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if query.hasRun && query.issues.isEmpty {
-            ContentUnavailableView("No Matching Issues", systemImage: "magnifyingglass",
-                                   description: Text("Try a different JQL query."))
+            ScaledContentUnavailableView("No Matching Issues", systemImage: "magnifyingglass",
+                                         description: Text("Try a different JQL query."))
         } else {
             VStack(spacing: 0) {
                 IssueListView(issues: query.issues, onOpen: onOpenIssue)

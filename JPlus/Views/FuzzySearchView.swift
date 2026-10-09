@@ -90,7 +90,7 @@ struct FuzzySearchView: View {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                 TextField("Search Jira", text: $query, prompt: Text("Search issues in plain words. Typos are fine."))
                     .textFieldStyle(.plain)
-                    .font(.title3)
+                    .scaledFont(.title3)
                     .focused($fieldFocused)
                 if model.isSearching {
                     ProgressView().controlSize(.small)
@@ -141,7 +141,7 @@ struct FuzzySearchView: View {
             Spacer()
             AppIconView(size: 88)
             Text("Search Jira")
-                .font(.title.weight(.semibold))
+                .scaledFont(.title.weight(.semibold))
             Text("Type a few words from a title, description or comment. Misspellings and half-typed words still match, and a key like VPE-5636 goes straight to that issue.")
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -165,16 +165,16 @@ struct FuzzySearchView: View {
                         .frame(width: 260)
                 }
                 Text("Indexing titles for typo-tolerant search… \(done.formatted())\(total.map { " of \($0.formatted())" } ?? "")")
-                    .font(.caption)
+                    .scaledFont(.caption)
                     .foregroundStyle(.secondary)
             }
         case .ready:
             Label("\(index.count.formatted()) issue titles indexed", systemImage: "checkmark.circle")
-                .font(.caption)
+                .scaledFont(.caption)
                 .foregroundStyle(.secondary)
         case .failed(let message):
             Label("Typo-tolerant index unavailable: \(message)", systemImage: "exclamationmark.triangle")
-                .font(.caption)
+                .scaledFont(.caption)
                 .foregroundStyle(.orange)
         case .idle:
             EmptyView()
@@ -193,7 +193,7 @@ struct FuzzySearchView: View {
                             Text("Did you mean:").foregroundStyle(.red)
                             Button(suggestion) { query = suggestion }
                                 .buttonStyle(.link)
-                                .font(.body.italic().bold())
+                                .scaledFont(.body.italic().bold())
                         }
                     }
                     if let error = model.errorMessage {
@@ -245,7 +245,7 @@ struct FuzzySearchView: View {
                 Text("· indexing titles (\(done.formatted()) so far)")
             }
         }
-        .font(.callout)
+        .scaledFont(.callout)
         .foregroundStyle(.secondary)
     }
 }
@@ -265,8 +265,8 @@ private struct SearchResultRow: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
                 IssueTypeBadge(name: hit.typeName, iconOnly: true)
-                    .font(.caption)
-                Text(hit.key).font(.caption.monospaced())
+                    .scaledFont(.caption)
+                Text(hit.key).scaledFont(.caption.monospaced())
                 if let projectName {
                     Text("· \(projectName)")
                 }
@@ -277,13 +277,13 @@ private struct SearchResultRow: View {
                 }
                 Text("· \(hit.updated.formatted(.relative(presentation: .named)))")
             }
-            .font(.caption)
+            .scaledFont(.caption)
             .foregroundStyle(.secondary)
             .lineLimit(1)
 
             Button(action: onOpen) {
                 Text(Highlighter.title(hit.summary, matched: hit.matchedTitleWords))
-                    .font(.title3)
+                    .scaledFont(.title3)
                     .foregroundStyle(Color(nsColor: .linkColor))
                     .underline(isHovering)
                     .lineLimit(2)
@@ -295,7 +295,7 @@ private struct SearchResultRow: View {
 
             if let snippet {
                 Text(Highlighter.snippet(snippet, queryTokens: queryTokens))
-                    .font(.callout)
+                    .scaledFont(.callout)
                     .foregroundStyle(.secondary)
                     .lineLimit(3)
                     .textSelection(.enabled)

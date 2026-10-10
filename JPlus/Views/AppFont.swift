@@ -1,14 +1,12 @@
 import AppKit
 import SwiftUI
 
-/// Settings › Font: the typeface for the main window's text. The three
-/// bundled families live in `Fonts/`; `registerBundledFonts()` makes them
-/// known to CoreText for this process, so no Info.plist entry is needed.
+/// Settings › Font: the typeface for the main window's text. Inter lives in
+/// `Fonts/`; `registerBundledFonts()` makes it known to CoreText for this
+/// process, so no Info.plist entry is needed.
 enum AppFont: String, CaseIterable, Identifiable {
     case system
     case inter
-    case atkinson
-    case plex
 
     static let storageKey = "fontFamily"
     /// What a fresh install uses.
@@ -20,8 +18,6 @@ enum AppFont: String, CaseIterable, Identifiable {
         switch self {
         case .system: "System"
         case .inter: "Inter"
-        case .atkinson: "Atkinson Hyperlegible"
-        case .plex: "IBM Plex Sans"
         }
     }
 
@@ -30,8 +26,6 @@ enum AppFont: String, CaseIterable, Identifiable {
         switch self {
         case .system: "San Francisco, the macOS font."
         case .inter: "The screen font Linear, Figma and GitHub use."
-        case .atkinson: "Made for legibility, with letters that are hard to confuse."
-        case .plex: "IBM's humanist sans, easy on the eyes for long reading."
         }
     }
 
@@ -40,8 +34,6 @@ enum AppFont: String, CaseIterable, Identifiable {
         switch self {
         case .system: nil
         case .inter: "Inter"
-        case .atkinson: "Atkinson Hyperlegible Next"
-        case .plex: "IBM Plex Sans"
         }
     }
 

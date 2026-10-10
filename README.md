@@ -21,6 +21,7 @@ A native macOS client for Jira Cloud, built with SwiftUI. Besides browsing, it c
 - [x] Comments shown as threads; reply to a comment
 - [x] Settings: clear downloaded and cached data
 - [x] Settings: Text Size slider with ten sizes, from 10 to 22 pt; ⌘+ (or ⌘=), ⌘− and ⌘0 in the View menu
+- [x] Settings: Font picker — Inter (the default), Atkinson Hyperlegible Next, IBM Plex Sans or the system font; the three families are bundled under the SIL Open Font License
 - [x] Versions per project with progress, drilling into each version's issues; Hide completed and Only show App Team toggles, and a button that opens the filtered list in Jira
 - [x] New Ticket: drop/paste/choose a screenshot, create the issue, attach the image
 - [x] Optional Draft with Claude: summary, description and type proposed from the screenshot

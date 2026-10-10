@@ -20,15 +20,28 @@ struct SettingsView: View {
     }
 }
 
-/// Slider for the main window's text size, with a sample at the chosen size.
+/// Font picker and size slider for the main window's text, with a sample in
+/// the chosen font and size.
 struct TextSizeSection: View {
     @AppStorage(TextSize.storageKey) private var step = TextSize.standardStep
+    @AppStorage(AppFont.storageKey) private var appFont = AppFont.standard
 
     private var pointSize: Int { Int(TextSize.pointSize(forStep: step)) }
     private var scale: CGFloat { TextSize.scale(forStep: step) }
 
+    private var footer: String {
+        let size = step == TextSize.standardStep ? "\(pointSize) pt, the macOS standard." : "\(pointSize) pt. The macOS standard is 13 pt."
+        return "\(appFont.detail) \(size)"
+    }
+
     var body: some View {
         Section {
+            Picker("Font", selection: $appFont) {
+                ForEach(AppFont.allCases) { font in
+                    Text(font.title).tag(font)
+                }
+            }
+
             Slider(
                 value: Binding(get: { Double(TextSize.clamped(step)) }, set: { step = Int($0.rounded()) }),
                 in: 0...Double(TextSize.largestStep),
@@ -46,17 +59,17 @@ struct TextSizeSection: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("VPE-1234  Update the release notes")
-                    .font(ScaledFont.body.font(scale: scale))
-                Text("In Progress · updated 2 hours ago")
-                    .font(ScaledFont.caption.font(scale: scale))
+                    .font(ScaledFont.body.font(scale: scale, family: appFont))
+                Text("In Progress · updated 2 hours ago · Illegal 10 O0 l1")
+                    .font(ScaledFont.caption.font(scale: scale, family: appFont))
                     .foregroundStyle(.secondary)
             }
             .lineLimit(1)
             .accessibilityHidden(true)
         } header: {
-            Text("Text Size")
+            Text("Text")
         } footer: {
-            Text(step == TextSize.standardStep ? "\(pointSize) pt, the macOS standard." : "\(pointSize) pt. The macOS standard is 13 pt.")
+            Text(footer)
                 .foregroundStyle(.secondary)
         }
     }

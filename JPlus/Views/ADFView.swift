@@ -75,6 +75,7 @@ private struct ADFBlock: View {
 
     @Environment(\.adfMedia) private var media
     @Environment(\.textSizeScale) private var textScale
+    @Environment(\.appFont) private var appFont
 
     var body: some View {
         switch node.type {
@@ -82,12 +83,12 @@ private struct ADFBlock: View {
             if node.children.isEmpty {
                 Color.clear.frame(height: 4)
             } else {
-                Text(ADFInline.attributedString(node.children, media: media, textScale: textScale))
+                Text(ADFInline.attributedString(node.children, media: media, textScale: textScale, font: appFont))
                     .textSelection(.enabled)
             }
 
         case "heading":
-            Text(ADFInline.attributedString(node.children, media: media, textScale: textScale))
+            Text(ADFInline.attributedString(node.children, media: media, textScale: textScale, font: appFont))
                 .scaledFont(headingFont(level: node.intAttr("level") ?? 3))
                 .padding(.top, 4)
                 .textSelection(.enabled)
@@ -149,7 +150,7 @@ private struct ADFBlock: View {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Image(systemName: item.attr("state") == "DONE" ? "checkmark.square.fill" : "square")
                             .foregroundStyle(item.attr("state") == "DONE" ? Color.accentColor : .secondary)
-                        Text(ADFInline.attributedString(item.children, media: media, textScale: textScale)).textSelection(.enabled)
+                        Text(ADFInline.attributedString(item.children, media: media, textScale: textScale, font: appFont)).textSelection(.enabled)
                     }
                 }
             }
@@ -165,7 +166,7 @@ private struct ADFBlock: View {
                     Text(text)
                 }
             } else if node.children.allSatisfy(ADFInline.isInline) {
-                Text(ADFInline.attributedString(node.children, media: media, textScale: textScale)).textSelection(.enabled)
+                Text(ADFInline.attributedString(node.children, media: media, textScale: textScale, font: appFont)).textSelection(.enabled)
             } else {
                 ADFBlocks(nodes: node.children)
             }
@@ -238,6 +239,7 @@ private struct ADFMediaSingle: View {
 
     @Environment(\.adfMedia) private var media
     @Environment(\.textSizeScale) private var textScale
+    @Environment(\.appFont) private var appFont
 
     var body: some View {
         VStack(alignment: alignment.horizontal, spacing: 4) {
@@ -245,7 +247,7 @@ private struct ADFMediaSingle: View {
                 ADFMediaView(media: item, maxWidth: width(of: item))
             }
             if let caption = node.children.first(where: { $0.type == "caption" }), !caption.children.isEmpty {
-                Text(ADFInline.attributedString(caption.children, media: media, textScale: textScale))
+                Text(ADFInline.attributedString(caption.children, media: media, textScale: textScale, font: appFont))
                     .scaledFont(.caption)
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
@@ -441,8 +443,8 @@ enum ADFInline {
     static func isInline(_ node: ADFNode) -> Bool { inlineTypes.contains(node.type) }
 
     /// `media` resolves attached files named in the text; without it they're plain text.
-    /// `textScale` sizes status lozenges, which carry their own font.
-    static func attributedString(_ nodes: [ADFNode], media: ADFMediaContext? = nil, textScale: CGFloat = 1) -> AttributedString {
+    /// `textScale` and `font` size status lozenges, which carry their own font.
+    static func attributedString(_ nodes: [ADFNode], media: ADFMediaContext? = nil, textScale: CGFloat = 1, font: AppFont = .system) -> AttributedString {
         var result = AttributedString()
         for node in nodes {
             switch node.type {
@@ -466,7 +468,7 @@ enum ADFInline {
             case "status":
                 var status = AttributedString(" \(node.attr("text")?.uppercased() ?? "STATUS") ")
                 status.backgroundColor = .secondary.opacity(0.2)
-                status.font = ScaledFont.caption.weight(.semibold).font(scale: textScale)
+                status.font = ScaledFont.caption.weight(.semibold).font(scale: textScale, family: font)
                 result += status
             case "date":
                 if let millis = node.attr("timestamp").flatMap(Double.init) {
@@ -486,7 +488,7 @@ enum ADFInline {
                     result += AttributedString(node.attr("alt") ?? "Attachment")
                 }
             default:
-                result += attributedString(node.children, media: media, textScale: textScale)
+                result += attributedString(node.children, media: media, textScale: textScale, font: font)
             }
         }
         return result

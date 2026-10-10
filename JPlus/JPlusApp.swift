@@ -5,8 +5,10 @@ struct JPlusApp: App {
     @State private var session = SessionStore()
     @State private var settings = SettingsStore()
     @AppStorage(TextSize.storageKey) private var textSizeStep = TextSize.standardStep
+    @AppStorage(AppFont.storageKey) private var appFont = AppFont.standard
 
     init() {
+        AppFont.registerBundledFonts()
         TextSize.installEqualsShortcut()
     }
 
@@ -15,7 +17,7 @@ struct JPlusApp: App {
             ContentView()
                 .environment(session)
                 .environment(settings)
-                .textSize(step: textSizeStep)
+                .textSize(step: textSizeStep, font: appFont)
                 .task { await settings.load() }
                 .task { await session.restore() }
                 .frame(minWidth: 480, minHeight: 360)

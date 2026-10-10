@@ -446,6 +446,7 @@ private struct PriorityItemRow: View {
     @State private var draft = ""
     @FocusState private var isFocused: Bool
     @Environment(\.textSizeScale) private var textScale
+    @Environment(\.appFont) private var appFont
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -467,7 +468,7 @@ private struct PriorityItemRow: View {
                     .onExitCommand { isEditing = false }
                     .onChange(of: isFocused) { if !isFocused { commitEdit() } }
             } else {
-                Text(ADFInline.attributedString(item.content, textScale: textScale))
+                Text(ADFInline.attributedString(item.content, textScale: textScale, font: appFont))
                     .strikethrough(item.isDone)
                     .foregroundStyle(item.isDone ? .secondary : .primary)
                     .textSelection(.enabled)

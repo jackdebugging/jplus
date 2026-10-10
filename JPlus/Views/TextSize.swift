@@ -3,8 +3,9 @@ import SwiftUI
 
 /// Settings › Text Size: ten steps around macOS's standard 13-point text.
 /// macOS ignores Dynamic Type, so the app sizes its own text: the main
-/// window's default font follows the step, and views use
-/// `.scaledFont(.callout)` where they would use `.font(.callout)`.
+/// window's default font follows the step (and Settings › Font, see
+/// `AppFont`), and views use `.scaledFont(.callout)` where they would use
+/// `.font(.callout)`.
 enum TextSize {
     static let storageKey = "textSize"
     /// Body text point size at each step of the slider.
@@ -66,12 +67,12 @@ extension EnvironmentValues {
 }
 
 extension View {
-    /// Sizes a window's text by the Text Size step.
-    func textSize(step: Int) -> some View {
-        modifier(TextSizeModifier(step: step))
+    /// Sizes a window's text by the Text Size step, in the chosen font.
+    func textSize(step: Int, font: AppFont = .system) -> some View {
+        modifier(TextSizeModifier(step: step, appFont: font))
     }
 
-    /// `.font(_:)` that follows Settings › Text Size.
+    /// `.font(_:)` that follows Settings › Text Size and Font.
     func scaledFont(_ font: ScaledFont) -> some View {
         modifier(ScaledFontModifier(font: font))
     }
@@ -79,14 +80,17 @@ extension View {
 
 private struct TextSizeModifier: ViewModifier {
     let step: Int
+    let appFont: AppFont
 
     func body(content: Content) -> some View {
         let scale = TextSize.scale(forStep: step)
         content
             .environment(\.textSizeScale, scale)
-            // At the standard size, leave fonts and sizes to AppKit's defaults.
+            .environment(\.appFont, appFont)
+            // At the standard size in the system font, leave fonts and sizes
+            // to AppKit's defaults.
             .transformEnvironment(\.font) { font in
-                if scale != 1 { font = ScaledFont.body.font(scale: scale) }
+                if scale != 1 || appFont != .system { font = ScaledFont.body.font(scale: scale, family: appFont) }
             }
             .transformEnvironment(\.controlSize) { size in
                 if scale != 1 { size = TextSize.controlSize(forStep: step) }
@@ -100,9 +104,10 @@ private struct TextSizeModifier: ViewModifier {
 private struct ScaledFontModifier: ViewModifier {
     let font: ScaledFont
     @Environment(\.textSizeScale) private var scale
+    @Environment(\.appFont) private var appFont
 
     func body(content: Content) -> some View {
-        content.font(font.font(scale: scale))
+        content.font(font.font(scale: scale, family: appFont))
     }
 }
 
@@ -163,8 +168,12 @@ struct ScaledFont {
         return font
     }
 
-    /// The font at `scale` times its standard size.
-    func font(scale: CGFloat) -> Font {
+    /// The font at `scale` times its standard size, in `family`. Monospaced
+    /// text stays in the system's mono font whatever the family.
+    func font(scale: CGFloat, family: AppFont = .system) -> Font {
+        if design != .monospaced, let font = family.font(size: pointSize * scale, weight: resolvedWeight, italic: isItalic) {
+            return font
+        }
         let font: Font = switch base {
         case .style(let style) where scale == 1:
             // Exactly the text style, so the standard step looks as it always has.
@@ -175,6 +184,20 @@ struct ScaledFont {
             .system(size: size * scale, weight: weight, design: design)
         }
         return isItalic ? font.italic() : font
+    }
+
+    /// Point size at the standard step.
+    private var pointSize: CGFloat {
+        switch base {
+        case .style(let style): style.macPointSize
+        case .size(let size): size
+        }
+    }
+
+    private var resolvedWeight: Font.Weight {
+        if let weight { return weight }
+        if case .style(let style) = base { return style.macWeight }
+        return .regular
     }
 }
 
@@ -247,13 +270,14 @@ extension ScaledContentUnavailableView where Label == SwiftUI.Label<Text, Image>
 struct ScaledSectionHeader: View {
     let title: Text
     @Environment(\.textSizeScale) private var scale
+    @Environment(\.appFont) private var appFont
 
     var body: some View {
-        if scale == 1 {
+        if scale == 1 && appFont == .system {
             // List's own header font, untouched.
             title
         } else {
-            title.font(ScaledFont.subheadline.bold().font(scale: scale))
+            title.font(ScaledFont.subheadline.bold().font(scale: scale, family: appFont))
         }
     }
 }

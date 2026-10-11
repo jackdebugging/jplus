@@ -55,6 +55,7 @@ struct IssueListView<FilterAccessory: View>: View {
     @Environment(SessionStore.self) private var session
     @Environment(\.openURL) private var openURL
     @Environment(\.textSizeScale) private var textScale
+    @Environment(\.appFont) private var appFont
     @State private var selection: Set<IssueSummary.ID> = []
     @State private var sortOrder = [IssueSummarySortComparator(column: .updated, order: .reverse)]
     @State private var filterText = ""
@@ -129,18 +130,60 @@ struct IssueListView<FilterAccessory: View>: View {
         .animation(.snappy(duration: 0.22), value: filterExpanded)
     }
 
+    /// Widths of the columns around Summary, each fitted to its widest cell
+    /// (or header) in the rows on screen, so Summary takes whatever is left
+    /// however the window is sized.
+    private struct ColumnWidths {
+        var key: CGFloat = 0
+        var status: CGFloat = 0
+        var assignee: CGFloat = 0
+        var updated: CGFloat = 0
+    }
+
+    private var columnWidths: ColumnWidths {
+        /// Space a table cell adds around its content.
+        let cellInset: CGFloat = 16
+        /// A header's title plus its sort indicator.
+        let headerFont = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize, weight: .medium)
+        let sortIndicatorWidth: CGFloat = 18
+        let issues = displayedIssues
+        func fitted(_ header: String, _ widths: [CGFloat]) -> CGFloat {
+            let title = ceil((header as NSString).size(withAttributes: [.font: headerFont]).width) + sortIndicatorWidth
+            return max(title, widths.max() ?? 0) + cellInset
+        }
+        let body = ScaledFont.body
+        let badge = ScaledFont.caption.weight(.bold)
+        var widths = ColumnWidths()
+        widths.key = fitted("Key", issues.map { body.monospaced().width(of: $0.key, scale: textScale, family: appFont) })
+        widths.status = fitted("Status", Set(issues.map { $0.fields.status.name.uppercased() }).map {
+            badge.width(of: $0, scale: textScale, family: appFont) + 16
+        })
+        widths.assignee = fitted("Assignee", issues.map { issue in
+            if let assignee = issue.fields.assignee {
+                return 18 + 6 + body.width(of: assignee.displayName, scale: textScale, family: appFont)
+            }
+            return body.width(of: "Unassigned", scale: textScale, family: appFont)
+        })
+        widths.updated = fitted("Updated", Set(issues.map { $0.fields.updated.formatted(.relative(presentation: .named)) }).map {
+            body.width(of: $0, scale: textScale, family: appFont)
+        })
+        return widths
+    }
+
     private var issueTable: some View {
-        Table(displayedIssues, selection: $selection, sortOrder: $sortOrder) {
+        let widths = columnWidths
+        return Table(displayedIssues, selection: $selection, sortOrder: $sortOrder) {
             TableColumn("", sortUsing: IssueSummarySortComparator(column: .issueType)) { issue in
                 IssueTypeBadge(name: issue.fields.issueType.name, iconOnly: true)
             }
-            // Icons and keys grow with Text Size so keys stay whole; Summary takes what's left.
+            // Every column but Summary fits its contents; Summary takes what's left.
             .width(24 * textScale)
 
             TableColumn("Key", sortUsing: IssueSummarySortComparator(column: .key)) { issue in
-                Text(issue.key).monospaced()
+                // The system mono font whatever Settings › Font says, as the width above assumes.
+                Text(issue.key).scaledFont(.body.monospaced())
             }
-            .width(min: 80 * textScale, ideal: 100 * textScale, max: 140 * textScale)
+            .width(widths.key)
 
             TableColumn("Summary", sortUsing: IssueSummarySortComparator(column: .summary)) { issue in
                 Text(issue.fields.summary).lineLimit(1).help(issue.fields.summary)
@@ -149,19 +192,19 @@ struct IssueListView<FilterAccessory: View>: View {
             TableColumn("Status", sortUsing: IssueSummarySortComparator(column: .status)) { issue in
                 StatusBadge(status: issue.fields.status)
             }
-            .width(min: 90, ideal: 120, max: 180)
+            .width(widths.status)
 
             TableColumn("Assignee", sortUsing: IssueSummarySortComparator(column: .assignee)) { issue in
                 PersonCell(user: issue.fields.assignee)
             }
-            .width(min: 100, ideal: 150, max: 220)
+            .width(widths.assignee)
 
             TableColumn("Updated", sortUsing: IssueSummarySortComparator(column: .updated)) { issue in
                 Text(issue.fields.updated, format: .relative(presentation: .named))
                     .foregroundStyle(.secondary)
                     .help(issue.fields.updated.formatted(date: .abbreviated, time: .shortened))
             }
-            .width(min: 80, ideal: 110, max: 160)
+            .width(widths.updated)
         }
         .contextMenu(forSelectionType: IssueSummary.ID.self) { ids in
             if let key = key(for: ids) {

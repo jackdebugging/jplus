@@ -51,6 +51,11 @@ enum AppFont: String, CaseIterable, Identifiable {
     /// The family at `size` with `weight`, italic if asked; nil for the system
     /// font or if the family isn't available.
     func font(size: CGFloat, weight: Font.Weight, italic: Bool) -> Font? {
+        nsFont(size: size, weight: weight, italic: italic).map(Font.init)
+    }
+
+    /// `font(size:weight:italic:)` as AppKit sees it, for measuring text.
+    func nsFont(size: CGFloat, weight: Font.Weight, italic: Bool) -> NSFont? {
         guard let familyName else { return nil }
         var symbolic: NSFontDescriptor.SymbolicTraits = []
         if italic { symbolic.insert(.italic) }
@@ -63,7 +68,7 @@ enum AppFont: String, CaseIterable, Identifiable {
         ])
         guard let nsFont = NSFont(descriptor: descriptor, size: size),
               nsFont.familyName == familyName else { return nil }
-        return Font(nsFont)
+        return nsFont
     }
 }
 
@@ -72,7 +77,7 @@ extension EnvironmentValues {
     @Entry var appFont: AppFont = .system
 }
 
-private extension Font.Weight {
+extension Font.Weight {
     var nsWeight: NSFont.Weight {
         switch self {
         case .ultraLight: .ultraLight

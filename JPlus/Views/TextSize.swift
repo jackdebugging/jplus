@@ -186,6 +186,24 @@ struct ScaledFont {
         return isItalic ? font.italic() : font
     }
 
+    /// `font(scale:family:)` as AppKit draws it, for measuring text before
+    /// laying it out (table columns that fit their contents, say).
+    func nsFont(scale: CGFloat, family: AppFont = .system) -> NSFont {
+        if design != .monospaced, let font = family.nsFont(size: pointSize * scale, weight: resolvedWeight, italic: isItalic) {
+            return font
+        }
+        var font = design == .monospaced
+            ? NSFont.monospacedSystemFont(ofSize: pointSize * scale, weight: resolvedWeight.nsWeight)
+            : NSFont.systemFont(ofSize: pointSize * scale, weight: resolvedWeight.nsWeight)
+        if isItalic { font = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask) }
+        return font
+    }
+
+    /// Width of `text` on one line.
+    func width(of text: String, scale: CGFloat, family: AppFont = .system) -> CGFloat {
+        ceil((text as NSString).size(withAttributes: [.font: nsFont(scale: scale, family: family)]).width)
+    }
+
     /// Point size at the standard step.
     private var pointSize: CGFloat {
         switch base {

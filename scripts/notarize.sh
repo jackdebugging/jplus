@@ -3,17 +3,17 @@
 # notarizes it with Apple and staples the ticket. The result is
 # build/JPlus.app and build/JPlus-<version>.zip, ready to share.
 #
-# Releases are signed by team 76L88YT6CG (steve@interactivelabs.co); the
+# Releases are signed by team 89V5HKLEV9 (sichengxu@gmail.com); the
 # project's own Debug signing stays on the development team.
 #
 # One-time setup:
-#   1. A "Developer ID Application" certificate for team 76L88YT6CG in your
+#   1. A "Developer ID Application" certificate for team 89V5HKLEV9 in your
 #      login keychain. Xcode creates one during the export below if the Apple
 #      ID signed into Xcode is the team's Account Holder; otherwise make it in
 #      Xcode › Settings › Accounts › Manage Certificates › +.
 #   2. Notary credentials saved under a keychain profile:
 #        xcrun notarytool store-credentials "jplus-notary" \
-#          --apple-id steve@interactivelabs.co --team-id 76L88YT6CG
+#          --apple-id sichengxu@gmail.com --team-id 89V5HKLEV9
 #      (asks for an app-specific password from appleid.apple.com), or
 #      --key /path/AuthKey.p8 --key-id KEYID --issuer ISSUER for an App Store
 #      Connect API key.
@@ -23,13 +23,22 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 PROFILE="${1:-jplus-notary}"
-TEAM=76L88YT6CG
+TEAM=89V5HKLEV9
 BUILD=build
 ARCHIVE="$BUILD/JPlus.xcarchive"
 EXPORT="$BUILD/export"
 
 if ! security find-identity -v -p codesigning | grep -q "Developer ID Application"; then
     echo "No Developer ID Application certificate in the keychain yet; asking Xcode to create one for team $TEAM."
+fi
+
+if ! xcrun notarytool history --keychain-profile "$PROFILE" >/dev/null 2>&1; then
+    cat >&2 <<MSG
+No notary credentials stored under the keychain profile "$PROFILE". Store them once with
+  xcrun notarytool store-credentials "$PROFILE" --apple-id sichengxu@gmail.com --team-id $TEAM
+(it asks for an app-specific password from account.apple.com), then run this script again.
+MSG
+    exit 1
 fi
 
 rm -rf "$ARCHIVE" "$EXPORT"

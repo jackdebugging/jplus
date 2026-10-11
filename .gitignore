@@ -20,3 +20,4 @@ build/
 jira_token
 *.token
 .env
+.app_specific_pwd

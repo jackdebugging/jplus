@@ -602,11 +602,11 @@ private struct VersionResolver {
 
 extension Notification.Name {
     /// Posted by the File > New Ticket menu command.
-    static let jplusNewTicket = Notification.Name("co.interactivelabs.jplus.newTicket")
+    static let jplusNewTicket = Notification.Name("com.hannagrove.jplus.mac.newTicket")
     /// Posted by Go > Search (⌘F).
-    static let jplusSearch = Notification.Name("co.interactivelabs.jplus.search")
+    static let jplusSearch = Notification.Name("com.hannagrove.jplus.mac.search")
     /// Posted by Go > Go to Issue or Version (⌘K).
-    static let jplusCommandPalette = Notification.Name("co.interactivelabs.jplus.commandPalette")
+    static let jplusCommandPalette = Notification.Name("com.hannagrove.jplus.mac.commandPalette")
 }
 
 /// A version nested under Versions in the sidebar.

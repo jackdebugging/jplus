@@ -47,5 +47,5 @@ enum LocalData {
 
 extension Notification.Name {
     /// Posted after Settings clears downloaded and cached data.
-    static let jplusLocalDataCleared = Notification.Name("co.interactivelabs.jplus.localDataCleared")
+    static let jplusLocalDataCleared = Notification.Name("com.hannagrove.jplus.mac.localDataCleared")
 }

@@ -49,7 +49,7 @@ that on every build and triggers a Keychain prompt each launch.
 
 - **App hangs at launch with no window** after a signing change: the sandbox
   container was created under the old signature. Quit the app and remove
-  `~/Library/Containers/co.interactivelabs.jplus`; it is recreated on next launch.
+  `~/Library/Containers/com.hannagrove.jplus.mac`; it is recreated on next launch.
 - **"JPlus wants to use your confidential information" prompt**: choose
   *Always Allow*. It appears once per signing identity.
 

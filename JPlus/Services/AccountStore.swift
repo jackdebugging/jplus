@@ -11,8 +11,8 @@ protocol AccountPersistence: Sendable {
 }
 
 nonisolated struct KeychainAccountPersistence: AccountPersistence {
-    private let accountsItem = KeychainStore(service: "co.interactivelabs.jplus", account: "jira-accounts")
-    private let legacyItem = KeychainStore(service: "co.interactivelabs.jplus", account: "jira-credentials")
+    private let accountsItem = KeychainStore(service: "com.hannagrove.jplus.mac", account: "jira-accounts")
+    private let legacyItem = KeychainStore(service: "com.hannagrove.jplus.mac", account: "jira-credentials")
 
     func loadAccounts() async throws -> [SavedAccount] {
         let item = accountsItem
@@ -180,7 +180,7 @@ enum AccountDefaults {
 
     private static var cache: [UUID: UserDefaults] = [:]
 
-    static func suiteName(for id: UUID) -> String { "co.interactivelabs.jplus.account.\(id.uuidString)" }
+    static func suiteName(for id: UUID) -> String { "com.hannagrove.jplus.mac.account.\(id.uuidString)" }
 
     static func store(for id: UUID) -> UserDefaults {
         if let cached = cache[id] { return cached }

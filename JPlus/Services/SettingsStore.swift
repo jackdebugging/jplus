@@ -9,7 +9,7 @@ final class SettingsStore {
 
     var hasClaudeAPIKey: Bool { !claudeAPIKey.isEmpty }
 
-    private let keychain = KeychainStore(service: "co.interactivelabs.jplus", account: "anthropic-api-key")
+    private let keychain = KeychainStore(service: "com.hannagrove.jplus.mac", account: "anthropic-api-key")
 
     func load() async {
         guard !isLoaded else { return }

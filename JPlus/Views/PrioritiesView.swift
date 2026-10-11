@@ -11,7 +11,30 @@ struct PrioritiesView: View {
     @Environment(\.openURL) private var openURL
     /// Link to (or id of) the root folder, per account.
     @AppStorage("prioritiesFolderURL") private var folderInput = ""
-    @AppStorage("prioritiesShowsDayList") private var showsDayList = true
+    @AppStorage("prioritiesShowsDayList") private var showsDayListColumn = true
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    /// On an iPhone the day list is a sheet, opened only when asked for.
+    @State private var showsDayListSheet = false
+    private var isCompact: Bool { horizontalSizeClass == .compact }
+    #else
+    private let isCompact = false
+    #endif
+
+    private var showsDayList: Bool {
+        get {
+            #if os(iOS)
+            if isCompact { return showsDayListSheet }
+            #endif
+            return showsDayListColumn
+        }
+        nonmutating set {
+            #if os(iOS)
+            if isCompact { showsDayListSheet = newValue; return }
+            #endif
+            showsDayListColumn = newValue
+        }
+    }
     @State private var model = PrioritiesModel()
     @State private var newText = ""
     @State private var isChoosingFolder = false
@@ -65,6 +88,13 @@ struct PrioritiesView: View {
             .inspector(isPresented: Binding(get: { showsDayList && folderID != nil }, set: { showsDayList = $0 })) {
                 PriorityDayList(model: model)
                     .inspectorColumnWidth(min: 180, ideal: 220, max: 320)
+                    #if os(iOS)
+                    .presentationDetents([.medium, .large])
+                    #endif
+            }
+            .onChange(of: model.selectedID) {
+                // Picking a day from the sheet shows it.
+                if isCompact { showsDayList = false }
             }
             .task(id: folderID) {
                 guard let client = session.client else { return }

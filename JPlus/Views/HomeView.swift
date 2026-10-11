@@ -236,6 +236,10 @@ struct HomeView: View {
                 .minimumScaleFactor(0.75)
                 .accessibilityLabel("for Atlassian trademark")
             Spacer(minLength: 6)
+            #if os(iOS)
+            // ⌘K on the Mac; without a keyboard it needs a button.
+            headerIcon("arrow.right.circle", help: "Go to Issue or Version", isActive: showPalette, action: openPalette)
+            #endif
             headerIcon("magnifyingglass", help: "Search (⌘F)", isActive: selection == .search, action: openSearch)
             headerIcon("square.and.pencil", help: "New Ticket (⌘N)", isActive: selection == .newTicket, filled: true) {
                 selection = .newTicket

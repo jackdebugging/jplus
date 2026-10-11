@@ -38,6 +38,8 @@ struct IssueSummarySortComparator: SortComparator, Hashable, Sendable {
 }
 
 /// Table of issues with double-click to open. Shared by search and versions.
+/// Where the width is compact (an iPhone), a list of stacked rows instead,
+/// since a table there shows only its first column.
 struct IssueListView<FilterAccessory: View>: View {
     let issues: [IssueSummary]
     let onOpen: (String) -> Void
@@ -59,6 +61,12 @@ struct IssueListView<FilterAccessory: View>: View {
     @State private var sortOrder = [IssueSummarySortComparator(column: .updated, order: .reverse)]
     @State private var filterText = ""
     @FocusState private var filterFocused: Bool
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    private var isCompact: Bool { horizontalSizeClass == .compact }
+    #else
+    private let isCompact = false
+    #endif
 
     private var filterExpanded: Bool {
         filterFocused || !filterText.isEmpty
@@ -80,15 +88,23 @@ struct IssueListView<FilterAccessory: View>: View {
         VStack(spacing: 0) {
             filterBar
             Divider()
-            issueTable
+            if isCompact {
+                issueRows
+            } else {
+                issueTable
+            }
         }
     }
 
     private var filterBar: some View {
         HStack(spacing: 8) {
-            if !filterExpanded { Spacer(minLength: 0) }
+            if !filterExpanded && !isCompact { Spacer(minLength: 0) }
 
             filterAccessory
+
+            if isCompact && !filterExpanded {
+                sortMenu
+            }
 
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass")
@@ -115,7 +131,7 @@ struct IssueListView<FilterAccessory: View>: View {
                 RoundedRectangle(cornerRadius: 8)
                     .strokeBorder(Color.secondary.opacity(filterFocused ? 0.45 : 0.22))
             )
-            .frame(maxWidth: filterExpanded ? .infinity : 200)
+            .frame(maxWidth: filterExpanded || isCompact ? .infinity : 200)
 
             if filterExpanded, !filterText.isEmpty {
                 Text("\(displayedIssues.count) of \(issues.count)")
@@ -225,6 +241,63 @@ struct IssueListView<FilterAccessory: View>: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    // MARK: - Compact
+
+    private static var sortColumns: [(IssueSummarySortComparator.Column, String)] { [
+        (.updated, "Updated"), (.key, "Key"), (.summary, "Summary"),
+        (.status, "Status"), (.assignee, "Assignee"), (.issueType, "Type"),
+    ] }
+
+    /// The table's header clicks, as a menu: pick a column, or the current
+    /// one again to flip the order.
+    private var sortMenu: some View {
+        Menu {
+            ForEach(Self.sortColumns, id: \.0) { column, title in
+                let active = sortOrder.first
+                Button {
+                    if active?.column == column {
+                        sortOrder = [IssueSummarySortComparator(column: column, order: active?.order == .forward ? .reverse : .forward)]
+                    } else {
+                        // Newest first for dates; A to Z for everything else.
+                        sortOrder = [IssueSummarySortComparator(column: column, order: column == .updated ? .reverse : .forward)]
+                    }
+                } label: {
+                    if active?.column == column {
+                        Label(title, systemImage: active?.order == .forward ? "chevron.up" : "chevron.down")
+                    } else {
+                        Text(title)
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "arrow.up.arrow.down")
+                .padding(6)
+        }
+        .accessibilityLabel("Sort")
+    }
+
+    private var issueRows: some View {
+        List(displayedIssues) { issue in
+            Button { onOpen(issue.key) } label: {
+                CompactIssueRow(issue: issue)
+            }
+            .foregroundStyle(.primary)
+            .contextMenu { rowActions(for: issue.key) }
+        }
+        .listStyle(.plain)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    @ViewBuilder
+    private func rowActions(for key: String) -> some View {
+        if let client = session.client {
+            let url = client.browseURL(for: key)
+            Button("Open in Jira", systemImage: "safari") { openURL(url) }
+            Button("Copy URL", systemImage: "link") { Clipboard.copy(url.absoluteString) }
+        }
+        Button("Copy Key", systemImage: "doc.on.doc") { Clipboard.copy(key) }
+    }
+
     private func key(for ids: Set<IssueSummary.ID>) -> String? {
         guard let id = ids.first else { return nil }
         return issues.first { $0.id == id }?.key
@@ -234,6 +307,40 @@ struct IssueListView<FilterAccessory: View>: View {
 extension IssueListView where FilterAccessory == EmptyView {
     init(issues: [IssueSummary], onOpen: @escaping (String) -> Void) {
         self.init(issues: issues, onOpen: onOpen) { EmptyView() }
+    }
+}
+
+/// One issue in two lines: type and summary, then key, status, assignee
+/// and when it last changed.
+private struct CompactIssueRow: View {
+    let issue: IssueSummary
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            IssueTypeBadge(name: issue.fields.issueType.name, iconOnly: true)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(issue.fields.summary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                HStack(spacing: 8) {
+                    Text(issue.key)
+                        .scaledFont(.subheadline.monospaced())
+                        .foregroundStyle(.secondary)
+                    StatusBadge(status: issue.fields.status)
+                    Spacer(minLength: 4)
+                    if let assignee = issue.fields.assignee {
+                        AvatarView(user: assignee, size: 18)
+                            .accessibilityLabel(assignee.displayName)
+                    }
+                    Text(issue.fields.updated, format: .relative(presentation: .named))
+                        .scaledFont(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+        }
+        .padding(.vertical, 2)
+        .contentShape(Rectangle())
     }
 }
 

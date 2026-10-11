@@ -24,7 +24,19 @@ struct IssueDetailView: View {
     @State private var team: IssueTeamField?
     @State private var previewURL: URL?
     @State private var attachmentError: String?
-    @AppStorage("showIssueDetailsPane") private var showDetailsPane = true
+    @AppStorage("showIssueDetailsPane") private var showsDetailsColumn = true
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    /// On an iPhone the pane is a sheet, opened only when asked for.
+    @State private var showsDetailsSheet = false
+    #endif
+
+    private var showDetailsPane: Binding<Bool> {
+        #if os(iOS)
+        if horizontalSizeClass == .compact { return $showsDetailsSheet }
+        #endif
+        return $showsDetailsColumn
+    }
 
     var body: some View {
         Group {
@@ -46,7 +58,7 @@ struct IssueDetailView: View {
         }
         .navigationTitle(key)
         .navigationSubtitleIfAvailable(subtitle)
-        .inspector(isPresented: $showDetailsPane) {
+        .inspector(isPresented: showDetailsPane) {
             Group {
                 if case .loaded(let issue) = phase {
                     IssueDetailsPane(issue: issue, team: team, onOpenIssue: onOpenIssue, onChanged: reloadIssue)
@@ -55,6 +67,9 @@ struct IssueDetailView: View {
                 }
             }
             .inspectorColumnWidth(min: 260, ideal: 320, max: 460)
+            #if os(iOS)
+            .presentationDetents([.medium, .large])
+            #endif
         }
         .environment(\.adfMedia, mediaContext)
         .quickLookPreview($previewURL)
@@ -69,11 +84,11 @@ struct IssueDetailView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
-                    showDetailsPane.toggle()
+                    showDetailsPane.wrappedValue.toggle()
                 } label: {
                     Label("Details", systemImage: "sidebar.trailing")
                 }
-                .help(showDetailsPane ? "Hide ticket details (⌥⌘0)" : "Show ticket details (⌥⌘0)")
+                .help(showDetailsPane.wrappedValue ? "Hide ticket details (⌥⌘0)" : "Show ticket details (⌥⌘0)")
                 .keyboardShortcut("0", modifiers: [.command, .option])
             }
             ToolbarItemGroup(placement: .secondaryAction) {

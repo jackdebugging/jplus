@@ -141,6 +141,13 @@ extension View {
         #endif
     }
 
+    /// A trailing inspector column where there's room; on an iPhone, a
+    /// half-height sheet instead, since `.inspector` there hides the
+    /// navigation bar's title and buttons.
+    func adaptiveInspector<Inspector: View>(isPresented: Binding<Bool>, @ViewBuilder content: @escaping () -> Inspector) -> some View {
+        modifier(AdaptiveInspector(isPresented: isPresented, inspector: content))
+    }
+
     /// Esc: the Mac's exit command; a hardware keyboard's Escape key on iOS.
     func onEscape(perform action: @escaping () -> Void) -> some View {
         #if os(macOS)
@@ -159,6 +166,30 @@ extension View {
         pointerStyle(.link)
         #else
         self
+        #endif
+    }
+}
+
+private struct AdaptiveInspector<Inspector: View>: ViewModifier {
+    @Binding var isPresented: Bool
+    let inspector: () -> Inspector
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #endif
+
+    func body(content: Content) -> some View {
+        #if os(iOS)
+        if horizontalSizeClass == .compact {
+            content.sheet(isPresented: $isPresented) {
+                inspector()
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
+            }
+        } else {
+            content.inspector(isPresented: $isPresented, content: inspector)
+        }
+        #else
+        content.inspector(isPresented: $isPresented, content: inspector)
         #endif
     }
 }

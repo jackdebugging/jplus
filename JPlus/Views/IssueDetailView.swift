@@ -58,7 +58,7 @@ struct IssueDetailView: View {
         }
         .navigationTitle(key)
         .navigationSubtitleIfAvailable(subtitle)
-        .inspector(isPresented: showDetailsPane) {
+        .adaptiveInspector(isPresented: showDetailsPane) {
             Group {
                 if case .loaded(let issue) = phase {
                     IssueDetailsPane(issue: issue, team: team, onOpenIssue: onOpenIssue, onChanged: reloadIssue)
@@ -67,9 +67,6 @@ struct IssueDetailView: View {
                 }
             }
             .inspectorColumnWidth(min: 260, ideal: 320, max: 460)
-            #if os(iOS)
-            .presentationDetents([.medium, .large])
-            #endif
         }
         .environment(\.adfMedia, mediaContext)
         .quickLookPreview($previewURL)

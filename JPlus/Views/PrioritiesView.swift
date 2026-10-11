@@ -63,7 +63,7 @@ struct PrioritiesView: View {
                     .help("Start a day's priorities")
                     .disabled(model.folder == nil)
                     .popover(isPresented: $isPickingNewDay, arrowEdge: .bottom) { newDayPicker }
-                    Button(showsDayList ? "Hide Days" : "Show Days", systemImage: "sidebar.right") {
+                    Button(showsDayList ? "Hide Days" : "Show Days", systemImage: isCompact ? "calendar" : "sidebar.right") {
                         showsDayList.toggle()
                     }
                     .help(showsDayList ? "Hide the list of days" : "Show the list of days")
@@ -85,12 +85,9 @@ struct PrioritiesView: View {
                     }
                 }
             }
-            .inspector(isPresented: Binding(get: { showsDayList && folderID != nil }, set: { showsDayList = $0 })) {
+            .adaptiveInspector(isPresented: Binding(get: { showsDayList && folderID != nil }, set: { showsDayList = $0 })) {
                 PriorityDayList(model: model)
                     .inspectorColumnWidth(min: 180, ideal: 220, max: 320)
-                    #if os(iOS)
-                    .presentationDetents([.medium, .large])
-                    #endif
             }
             .onChange(of: model.selectedID) {
                 // Picking a day from the sheet shows it.
@@ -252,7 +249,7 @@ struct PrioritiesView: View {
                     .scaledFont(.callout)
                     .foregroundStyle(.secondary)
             } else {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: Self.rowSpacing) {
                     ForEach(day.items) { item in
                         PriorityItemRow(
                             item: item,
@@ -269,6 +266,70 @@ struct PrioritiesView: View {
             }
         }
     }
+
+    #if os(iOS)
+    /// Rows carry their own padding and separator, as in Reminders.
+    private static let rowSpacing: CGFloat = 0
+
+    /// Reminders' section header: the day in bold (Today in the accent
+    /// color), its date beneath, the count and a menu on the right.
+    private func dayHeader(_ day: PriorityDay) -> some View {
+        let isToday = Calendar.current.isDateInToday(day.day)
+        return HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(dayLabel(day.day))
+                    .scaledFont(.title2.bold())
+                    .foregroundStyle(isToday ? Color.accentColor : .primary)
+                Text(headerDate(day.day))
+                    .scaledFont(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+            if !day.items.isEmpty {
+                Text(day.openCount == 0 ? "All done" : "\(day.items.count - day.openCount) of \(day.items.count)")
+                    .scaledFont(.subheadline.weight(.medium))
+                    .foregroundStyle(.secondary)
+            }
+            Menu {
+                Button("Open in Confluence", systemImage: "safari") { openURL(day.webURL) }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .scaledFont(.title3)
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("More for \(day.title)")
+        }
+    }
+
+    /// The date under a day's name, without repeating a weekday it already shows.
+    private func headerDate(_ day: Date) -> String {
+        let calendar = Calendar.current
+        let named = calendar.isDateInToday(day) || calendar.isDateInYesterday(day) || calendar.isDateInTomorrow(day)
+        if !named, calendar.isDate(day, equalTo: Date(), toGranularity: .year) {
+            return day.formatted(.dateTime.month(.wide).day())
+        }
+        return named ? longDate(day) : day.formatted(.dateTime.month(.wide).day().year())
+    }
+
+    /// Reminders' "New Reminder" row, typed into in place.
+    private func addField(for day: PriorityDay) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: "plus.circle.fill")
+                .scaledFont(.title3)
+                .foregroundStyle(Color.accentColor)
+                .frame(width: PriorityItemRow.checkWidth)
+            TextField("New Priority", text: $newText, axis: .vertical)
+                .lineLimit(1...4)
+                .focused($isAddFieldFocused)
+                .onSubmit { add(to: day) }
+                .submitLabel(.done)
+        }
+        .padding(.vertical, 10)
+    }
+    #else
+    private static let rowSpacing: CGFloat = 6
 
     private func dayHeader(_ day: PriorityDay) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -307,6 +368,7 @@ struct PrioritiesView: View {
         }
         .padding(.top, 2)
     }
+    #endif
 
     private func add(to day: PriorityDay) {
         let text = newText
@@ -464,6 +526,7 @@ private struct PriorityDayList: View {
 }
 
 /// One checkbox line. Double-click (or Edit… in the menu) to change its text.
+/// On iOS it looks like a reminder: a round check, and a hairline beneath.
 private struct PriorityItemRow: View {
     let item: PriorityItem
     let day: PriorityDay
@@ -478,16 +541,33 @@ private struct PriorityItemRow: View {
     @Environment(\.textSizeScale) private var textScale
     @Environment(\.appFont) private var appFont
 
+    #if os(iOS)
+    private static let openSymbol = "circle"
+    private static let doneSymbol = "checkmark.circle"
+    #else
+    private static let openSymbol = "square"
+    private static let doneSymbol = "checkmark.square"
+    #endif
+
+    /// Width of the check column, which the add row lines up with.
+    static let checkWidth: CGFloat = 26
+
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Toggle("", isOn: Binding(
-                get: { item.isDone },
-                set: { model.setDone($0, item: item, in: day) }
-            ))
-            .checkboxToggleStyle()
-            .labelsHidden()
-            .disabled(isBusy)
-            .accessibilityLabel(item.plainText)
+        #if os(iOS)
+        VStack(alignment: .leading, spacing: 0) {
+            line
+                .padding(.vertical, 10)
+            Divider()
+                .padding(.leading, Self.checkWidth + 12)
+        }
+        #else
+        line
+        #endif
+    }
+
+    private var line: some View {
+        HStack(alignment: .firstTextBaseline, spacing: Self.lineSpacing) {
+            check
 
             if isEditing {
                 TextField("Priority", text: $draft, axis: .vertical)
@@ -499,7 +579,7 @@ private struct PriorityItemRow: View {
                     .onChange(of: isFocused) { if !isFocused { commitEdit() } }
             } else {
                 Text(ADFInline.attributedString(item.content, textScale: textScale, font: appFont))
-                    .strikethrough(item.isDone)
+                    .strikethrough(item.isDone && Self.strikesDone)
                     .foregroundStyle(item.isDone ? .secondary : .primary)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -512,7 +592,7 @@ private struct PriorityItemRow: View {
         }
         .contextMenu {
             Button("Edit…", systemImage: "pencil", action: beginEdit)
-            Button(item.isDone ? "Mark Not Done" : "Mark Done", systemImage: item.isDone ? "square" : "checkmark.square") {
+            Button(item.isDone ? "Mark Not Done" : "Mark Done", systemImage: item.isDone ? Self.openSymbol : Self.doneSymbol) {
                 model.setDone(!item.isDone, item: item, in: day)
             }
             if canMoveToToday {
@@ -529,6 +609,44 @@ private struct PriorityItemRow: View {
             }
         }
     }
+
+    #if os(iOS)
+    private static let lineSpacing: CGFloat = 12
+    /// Reminders greys finished items without striking them through.
+    private static let strikesDone = false
+
+    /// Reminders' round check: an empty ring, filled when done.
+    private var check: some View {
+        Button {
+            model.setDone(!item.isDone, item: item, in: day)
+        } label: {
+            Image(systemName: item.isDone ? "largecircle.fill.circle" : "circle")
+                .scaledFont(.title3.weight(.light))
+                .foregroundStyle(item.isDone ? Color.accentColor : Color.secondary.opacity(0.6))
+                .frame(width: Self.checkWidth)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(isBusy)
+        .accessibilityLabel(item.plainText)
+        .accessibilityValue(item.isDone ? "Done" : "Not done")
+        .accessibilityAddTraits(.isToggle)
+    }
+    #else
+    private static let lineSpacing: CGFloat = 8
+    private static let strikesDone = true
+
+    private var check: some View {
+        Toggle("", isOn: Binding(
+            get: { item.isDone },
+            set: { model.setDone($0, item: item, in: day) }
+        ))
+        .checkboxToggleStyle()
+        .labelsHidden()
+        .disabled(isBusy)
+        .accessibilityLabel(item.plainText)
+    }
+    #endif
 
     private func beginEdit() {
         draft = item.plainText

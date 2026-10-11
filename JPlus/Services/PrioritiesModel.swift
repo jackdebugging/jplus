@@ -16,7 +16,7 @@ final class PrioritiesModel {
     /// Loaded day pages by page id.
     private(set) var pages: [String: PriorityDay] = [:]
     /// Days in the main pane, top first: the selected day, then each earlier
-    /// day loaded below it with Load Previous Day.
+    /// day loaded below it — the last few at first, more with Load Previous Day.
     private(set) var shownIDs: [String] = []
     private(set) var loadingPageIDs: Set<String> = []
     private(set) var isLoading = false
@@ -34,6 +34,8 @@ final class PrioritiesModel {
     /// Writes run one after another, so edits to the same page don't race.
     private var lastWrite: Task<Void, Never>?
     private var generation = 0
+    /// How many days the main pane opens with.
+    private let initialDayCount = 5
 
     private var siteURL: URL { client?.credentials.siteURL ?? URL(string: "https://atlassian.net")! }
 
@@ -94,11 +96,13 @@ final class PrioritiesModel {
                 }
                 .sorted { $0.title > $1.title }
 
-            // Keep what was on screen if it still exists; otherwise open today, or the latest day.
+            // Keep what was on screen if it still exists; otherwise open the
+            // last few days, starting from today or the latest day.
             let known = Set(index.map(\.pageID))
             shownIDs = shownIDs.filter(known.contains)
-            if shownIDs.isEmpty, let first = todayRef ?? index.first {
-                shownIDs = [first.pageID]
+            if shownIDs.isEmpty, let first = todayRef ?? index.first,
+               let start = index.firstIndex(where: { $0.pageID == first.pageID }) {
+                shownIDs = index[start...].prefix(initialDayCount).map(\.pageID)
             }
             pages = pages.filter { known.contains($0.key) }
             await withTaskGroup(of: Void.self) { group in

@@ -39,7 +39,7 @@ struct AccountPickerView: View {
             Button("Delete", role: .destructive) { delete(account) }
             Button("Cancel", role: .cancel) {}
         } message: { account in
-            Text("Removes \(account.credentials.email) on \(account.credentials.siteHost) and its API token from this Mac. The token stays valid at Atlassian until you revoke it there.")
+            Text("Removes \(account.credentials.email) on \(account.credentials.siteHost) and its API token from \(Device.this). The token stays valid at Atlassian until you revoke it there.")
         }
     }
 

@@ -118,7 +118,7 @@ struct EditableSummary: View {
                     .focused($isFocused)
                     .disabled(isSaving)
                     .onSubmit { Task { await save() } }
-                    .onExitCommand { cancel() }
+                    .onEscape { cancel() }
                 HStack(spacing: 8) {
                     Button("Save") { Task { await save() } }
                         .buttonStyle(.borderedProminent)
@@ -817,7 +817,7 @@ struct DescriptionSection: View {
                 .disabled(isSaving)
                 .frame(minHeight: 200, maxHeight: 520)
                 .padding(6)
-                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+                .background(Color.textBackground, in: RoundedRectangle(cornerRadius: 6))
                 .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(isFocused ? AnyShapeStyle(.tint) : AnyShapeStyle(.quaternary)))
             HStack(spacing: 8) {
                 Button("Save") { Task { await save() } }
@@ -1020,7 +1020,7 @@ struct CommentComposer: View {
                 }
                 .frame(height: isExpanded ? (isReply ? 80 : 110) : 22)
                 .padding(6)
-                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+                .background(Color.textBackground, in: RoundedRectangle(cornerRadius: 6))
                 .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(isFocused ? AnyShapeStyle(.tint) : AnyShapeStyle(.quaternary)))
 
                 if isExpanded {

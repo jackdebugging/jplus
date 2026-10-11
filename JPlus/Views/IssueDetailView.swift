@@ -1,4 +1,3 @@
-import AppKit
 import QuickLook
 import SwiftUI
 
@@ -46,7 +45,7 @@ struct IssueDetailView: View {
             }
         }
         .navigationTitle(key)
-        .navigationSubtitle(subtitle)
+        .navigationSubtitleIfAvailable(subtitle)
         .inspector(isPresented: $showDetailsPane) {
             Group {
                 if case .loaded(let issue) = phase {
@@ -362,8 +361,7 @@ private struct IssueDetailsPane: View {
 
     private func copyPrompt(kind: IssueCursorPromptKind) {
         let text = IssueCursorPrompts.text(for: issue, kind: kind)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
+        Clipboard.copy(text)
         copiedPromptToast = true
         Task {
             try? await Task.sleep(for: .seconds(2))
@@ -406,7 +404,7 @@ private struct AttachmentRow: View {
     let attachment: JiraIssue.Attachment
 
     @Environment(\.adfMedia) private var media
-    @State private var thumbnail: NSImage?
+    @State private var thumbnail: PlatformImage?
     @State private var isOpening = false
     @State private var isHovered = false
 
@@ -453,7 +451,7 @@ private struct AttachmentRow: View {
         let shape = RoundedRectangle(cornerRadius: 5)
         return Group {
             if let thumbnail {
-                Image(nsImage: thumbnail)
+                Image(platformImage: thumbnail)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
             } else {
@@ -619,7 +617,7 @@ private struct FixVersionsPicker: View {
                 get: { checked.contains(version.id) },
                 set: { include in Task { await save(version, included: include) } }
             ))
-            .toggleStyle(.checkbox)
+            .checkboxToggleStyle()
             .disabled(saving.contains(version.id))
             Spacer(minLength: 8)
             if saving.contains(version.id) {
@@ -773,7 +771,7 @@ private struct ChildIssuesSection: View {
                     Link("View All in Jira", destination: client.browseURL(jql: JiraClient.childIssuesJQL(of: parentKey)))
                 }
             }
-            .buttonStyle(.link)
+            .linkButtonStyle()
             .scaledFont(.callout)
         }
     }
@@ -912,13 +910,11 @@ private struct IssueKeyMenu: View {
             let url = client.browseURL(for: key)
             Button("Open in Jira") { openURL(url) }
             Button("Copy URL") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                Clipboard.copy(url.absoluteString)
             }
         }
         Button("Copy Key") {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(key, forType: .string)
+            Clipboard.copy(key)
         }
     }
 }
@@ -987,8 +983,7 @@ private struct DesignRow: View {
             }
             Divider()
             Button("Copy Link") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(design.url.absoluteString, forType: .string)
+                Clipboard.copy(design.url.absoluteString)
             }
         }
     }

@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import PhotosUI
+#endif
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -10,7 +14,7 @@ struct NewTicketView: View {
 
     @Environment(SessionStore.self) private var session
     @Environment(SettingsStore.self) private var settings
-    @Environment(\.openSettings) private var openSettings
+    @Environment(\.openAppSettings) private var openSettings
 
     @AppStorage("newTicketProjectKey") private var projectKey = "VPE"
     @AppStorage("newTicketIssueTypeName") private var preferredTypeName = "Bug"
@@ -44,7 +48,11 @@ struct NewTicketView: View {
     @State private var progress: String?
     @State private var errorMessage: String?
     /// Local ⌘V handler, installed while this screen is visible.
+    #if os(macOS)
     @State private var pasteMonitor: Any?
+    #else
+    @State private var photoItem: PhotosPickerItem?
+    #endif
 
     /// The team new tickets are given unless another is picked.
     private static let defaultTeamName = "App Team"
@@ -101,9 +109,11 @@ struct NewTicketView: View {
             Task { await importScreenshot(from: providers) }
             return true
         }
+        #if os(macOS)
         .onPasteCommand(of: ScreenshotImport.acceptedTypes) { providers in
             Task { await importScreenshot(from: providers) }
         }
+        #endif
         .fileImporter(isPresented: $showingFileImporter, allowedContentTypes: [.image]) { result in
             if case .success(let url) = result {
                 setScreenshot(ScreenshotImport.load(url: url), failureMessage: "That file isn't an image the app can read.")
@@ -114,8 +124,15 @@ struct NewTicketView: View {
         .task(id: projectKey) { await loadIssueTypes() }
         .task(id: projectKey) { await loadVersions() }
         .task(id: createScreenKey) { await loadCreateFields() }
+        #if os(macOS)
         .onAppear(perform: installPasteMonitor)
         .onDisappear(perform: removePasteMonitor)
+        #else
+        .onChange(of: photoItem) {
+            guard let photoItem else { return }
+            Task { await importPhoto(photoItem) }
+        }
+        #endif
     }
 
     // MARK: - Screenshot
@@ -132,7 +149,7 @@ struct NewTicketView: View {
                     )
 
                 if let screenshot, let image = screenshot.image {
-                    Image(nsImage: image)
+                    Image(platformImage: image)
                         .resizable()
                         .scaledToFit()
                         .padding(8)
@@ -141,12 +158,21 @@ struct NewTicketView: View {
                         Image(systemName: "photo.badge.plus")
                             .scaledFont(.system(size: 34))
                             .foregroundStyle(.secondary)
+                        #if os(macOS)
                         Text("Drop a screenshot here")
                             .scaledFont(.headline)
                         Text("or paste with ⌘V, or choose a file. Tip: ⌃⇧⌘4 captures a region to the clipboard.")
                             .scaledFont(.callout)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
+                        #else
+                        Text("Add a screenshot")
+                            .scaledFont(.headline)
+                        Text("Choose one from Photos or Files, or paste one you've copied.")
+                            .scaledFont(.callout)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                        #endif
                     }
                     .padding()
                 }
@@ -155,6 +181,11 @@ struct NewTicketView: View {
             .animation(.easeInOut(duration: 0.15), value: isDropTargeted)
 
             HStack(spacing: 10) {
+                #if os(iOS)
+                PhotosPicker(selection: $photoItem, matching: .images) {
+                    Label("Photos", systemImage: "photo")
+                }
+                #endif
                 Button("Choose…", systemImage: "folder") { showingFileImporter = true }
                 Button("Paste", systemImage: "doc.on.clipboard") {
                     setScreenshot(ScreenshotImport.loadFromPasteboard(), failureMessage: "The clipboard doesn't contain an image.")
@@ -241,7 +272,7 @@ struct NewTicketView: View {
                     .scaledFont(.body)
                     .frame(minHeight: 160)
                     .padding(4)
-                    .background(Color(nsColor: .textBackgroundColor))
+                    .background(Color.textBackground)
                     .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.secondary.opacity(0.3)))
                     .clipShape(RoundedRectangle(cornerRadius: 6))
             }
@@ -445,6 +476,7 @@ struct NewTicketView: View {
         }
     }
 
+    #if os(macOS)
     // MARK: - ⌘V
 
     /// ⌘V normally goes to whichever text field has focus, and a text field
@@ -469,6 +501,17 @@ struct NewTicketView: View {
         if let pasteMonitor { NSEvent.removeMonitor(pasteMonitor) }
         pasteMonitor = nil
     }
+    #else
+    // MARK: - Photos
+
+    private func importPhoto(_ item: PhotosPickerItem) async {
+        defer { photoItem = nil }
+        let ext = item.supportedContentTypes.first?.preferredFilenameExtension ?? "png"
+        let data = try? await item.loadTransferable(type: Data.self)
+        setScreenshot(data.flatMap { Screenshot(data: $0, filename: "Photo.\(ext)") },
+                      failureMessage: "That photo couldn't be read.")
+    }
+    #endif
 
     // MARK: - Screenshot import
 

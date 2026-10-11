@@ -12,11 +12,19 @@ struct SettingsView: View {
                 Text("Used only when you press Draft with Claude on a new ticket. The screenshot and your notes are sent to Anthropic's API; the key is stored in your Keychain.")
                     .foregroundStyle(.secondary)
             }
+            #if os(macOS)
             KeyboardShortcutsSection()
+            #else
+            if UIDevice.current.userInterfaceIdiom == .pad {
+                KeyboardShortcutsSection()
+            }
+            #endif
             StorageSection()
         }
         .formStyle(.grouped)
+        #if os(macOS)
         .frame(width: 480)
+        #endif
     }
 }
 
@@ -30,7 +38,8 @@ struct TextSizeSection: View {
     private var scale: CGFloat { TextSize.scale(forStep: step) }
 
     private var footer: String {
-        let size = step == TextSize.standardStep ? "\(pointSize) pt, the macOS standard." : "\(pointSize) pt. The macOS standard is 13 pt."
+        let standard = Int(TextSize.pointSize(forStep: TextSize.standardStep))
+        let size = step == TextSize.standardStep ? "\(pointSize) pt, the standard size." : "\(pointSize) pt. The standard is \(standard) pt."
         return "\(appFont.detail) \(size)"
     }
 
@@ -127,7 +136,7 @@ struct StorageSection: View {
         if isClearing { return "Clearing…" }
         if wasCleared { return "Cleared" }
         guard let usage else { return "Calculating…" }
-        return usage == 0 ? "Nothing stored" : "Using \(usage.formatted(.byteCount(style: .file))) on this Mac"
+        return usage == 0 ? "Nothing stored" : "Using \(usage.formatted(.byteCount(style: .file))) on \(Device.this)"
     }
 
     var body: some View {

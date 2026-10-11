@@ -32,7 +32,7 @@ struct CommandPaletteView: View {
             hints
         }
         .frame(width: 660)
-        .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 14))
+        .background(Color.windowBackground, in: RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.primary.opacity(0.12)))
         .shadow(color: .black.opacity(0.3), radius: 30, y: 12)
         .onAppear { fieldFocused = true }

@@ -1,12 +1,12 @@
-import AppKit
 import SwiftUI
 
-/// The app's own icon, for in-app branding (sign-in screens, loading).
+/// The app's own icon, for in-app branding (sign-in screens, loading). Drawn
+/// from a copy of the macOS icon, since iOS can't read the app icon back.
 struct AppIconView: View {
     var size: CGFloat = 72
 
     var body: some View {
-        Image(nsImage: NSApplication.shared.applicationIconImage)
+        Image("AppLogo")
             .resizable()
             .interpolation(.high)
             .frame(width: size, height: size)

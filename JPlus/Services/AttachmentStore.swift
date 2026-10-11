@@ -1,4 +1,4 @@
-import AppKit
+import Foundation
 
 /// Downloads issue attachments once and keeps them as files in the app's
 /// temporary directory (which the system clears over time), so images draw
@@ -7,8 +7,8 @@ final class AttachmentStore {
     static let shared = AttachmentStore()
 
     private var downloads: [URL: Task<URL, Error>] = [:]
-    private let images = NSCache<NSURL, NSImage>()
-    private let thumbnails = NSCache<NSString, NSImage>()
+    private let images = NSCache<NSURL, PlatformImage>()
+    private let thumbnails = NSCache<NSString, PlatformImage>()
 
     /// Local copy of an attachment, downloaded the first time it's asked for.
     func file(for attachment: JiraIssue.Attachment, using client: JiraClient) async throws -> URL {
@@ -30,20 +30,20 @@ final class AttachmentStore {
     }
 
     /// An image attachment, decoded.
-    func image(for attachment: JiraIssue.Attachment, using client: JiraClient) async throws -> NSImage {
+    func image(for attachment: JiraIssue.Attachment, using client: JiraClient) async throws -> PlatformImage {
         let file = try await file(for: attachment, using: client)
         if let image = images.object(forKey: file as NSURL) { return image }
-        guard let image = NSImage(contentsOf: file), image.isValid else { throw AttachmentError.unreadableImage }
+        guard let image = PlatformImage.decoded(contentsOf: file) else { throw AttachmentError.unreadableImage }
         images.setObject(image, forKey: file as NSURL)
         return image
     }
 
     /// Jira's small preview of an image attachment, kept in memory only.
-    func thumbnail(for attachment: JiraIssue.Attachment, using client: JiraClient) async throws -> NSImage {
+    func thumbnail(for attachment: JiraIssue.Attachment, using client: JiraClient) async throws -> PlatformImage {
         let key = "\(client.credentials.siteHost)/\(attachment.id)" as NSString
         if let image = thumbnails.object(forKey: key) { return image }
         let data = try await client.attachmentThumbnail(id: attachment.id)
-        guard let image = NSImage(data: data), image.isValid else { throw AttachmentError.unreadableImage }
+        guard let image = PlatformImage.decoded(from: data) else { throw AttachmentError.unreadableImage }
         thumbnails.setObject(image, forKey: key)
         return image
     }

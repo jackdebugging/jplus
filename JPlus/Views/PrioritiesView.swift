@@ -307,7 +307,7 @@ struct PrioritiesView: View {
                         isPickingNewDay = false
                         Task { await model.select(existing.pageID) }
                     }
-                    .buttonStyle(.link)
+                    .linkButtonStyle()
                 }
                 .scaledFont(.callout)
             } else if let source {
@@ -454,7 +454,7 @@ private struct PriorityItemRow: View {
                 get: { item.isDone },
                 set: { model.setDone($0, item: item, in: day) }
             ))
-            .toggleStyle(.checkbox)
+            .checkboxToggleStyle()
             .labelsHidden()
             .disabled(isBusy)
             .accessibilityLabel(item.plainText)
@@ -465,7 +465,7 @@ private struct PriorityItemRow: View {
                     .lineLimit(1...6)
                     .focused($isFocused)
                     .onSubmit(commitEdit)
-                    .onExitCommand { isEditing = false }
+                    .onEscape { isEditing = false }
                     .onChange(of: isFocused) { if !isFocused { commitEdit() } }
             } else {
                 Text(ADFInline.attributedString(item.content, textScale: textScale, font: appFont))
@@ -491,8 +491,7 @@ private struct PriorityItemRow: View {
                 }
             }
             Button("Copy Text", systemImage: "doc.on.doc") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(item.plainText, forType: .string)
+                Clipboard.copy(item.plainText)
             }
             Divider()
             Button("Delete", systemImage: "trash", role: .destructive) {

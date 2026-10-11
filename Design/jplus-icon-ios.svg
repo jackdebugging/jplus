@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="100 100 824 824">
+  <title>JPlus app icon, iOS</title>
+  <!-- The macOS tile, full bleed and square: iOS rounds the corners itself and
+       wants no transparency or shadow. -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFD83D"/>
+      <stop offset="1" stop-color="#FFB900"/>
+    </linearGradient>
+    <radialGradient id="highlight" cx="0.5" cy="0.08" r="0.75">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="mark" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2A2A2A"/>
+      <stop offset="1" stop-color="#0A0A0A"/>
+    </linearGradient>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" fill="url(#tile)"/>
+  <rect x="100" y="100" width="824" height="824" fill="url(#highlight)"/>
+  <path d="M 646 256 V 596 A 150 150 0 0 1 346 596" fill="none" stroke="#C88A00" stroke-width="124"
+        stroke-linecap="round" transform="translate(24 24)"/>
+  <path d="M 646 256 V 596 A 150 150 0 0 1 346 596" fill="none" stroke="url(#mark)" stroke-width="124"
+        stroke-linecap="round"/>
+</svg>

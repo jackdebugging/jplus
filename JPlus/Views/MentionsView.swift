@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 
 /// Every @-mention of the signed-in user in descriptions and comments,
@@ -88,13 +87,11 @@ struct MentionsView: View {
             let url = jiraBrowseURL(for: mention, client: client)
             Button("Open in Jira") { openURL(url) }
             Button("Copy URL") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                Clipboard.copy(url.absoluteString)
             }
         }
         Button("Copy Key") {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(mention.issueKey, forType: .string)
+            Clipboard.copy(mention.issueKey)
         }
     }
 

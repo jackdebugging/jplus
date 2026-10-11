@@ -5,7 +5,7 @@ import SwiftUI
 /// the detail column shows the selection inside a navigation stack.
 struct HomeView: View {
     @Environment(SessionStore.self) private var session
-    @Environment(\.openSettings) private var openSettings
+    @Environment(\.openAppSettings) private var openSettings
     let user: JiraUser
 
     enum SidebarItem: Hashable {
@@ -276,7 +276,7 @@ struct HomeView: View {
             Button("Settings…", systemImage: "gearshape") { openSettings() }
             if let client = session.client {
                 Button("Open \(client.credentials.siteHost)", systemImage: "safari") {
-                    NSWorkspace.shared.open(client.credentials.siteURL)
+                    openInBrowser(client.credentials.siteURL)
                 }
             }
             Divider()

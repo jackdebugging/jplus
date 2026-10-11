@@ -9,7 +9,9 @@ struct JPlusApp: App {
 
     init() {
         AppFont.registerBundledFonts()
+        #if os(macOS)
         TextSize.installEqualsShortcut()
+        #endif
     }
 
     var body: some Scene {
@@ -20,8 +22,11 @@ struct JPlusApp: App {
                 .textSize(step: textSizeStep, font: appFont)
                 .task { await settings.load() }
                 .task { await session.restore() }
+                .appSettings()
+                #if os(macOS)
                 .frame(minWidth: 480, minHeight: 360)
                 .background(WindowFrameAutosave(name: "JPlusMainWindow"))
+                #endif
         }
         .commands {
             CommandGroup(replacing: .newItem) {
@@ -62,10 +67,12 @@ struct JPlusApp: App {
             }
         }
 
+        #if os(macOS)
         Settings {
             SettingsView()
                 .environment(settings)
                 .environment(session)
         }
+        #endif
     }
 }

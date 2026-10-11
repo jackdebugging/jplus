@@ -1,16 +1,22 @@
+#if os(macOS)
 import AppKit
+#endif
 import SwiftUI
 
-/// Settings › Text Size: ten steps around macOS's standard 13-point text.
-/// macOS ignores Dynamic Type, so the app sizes its own text: the main
-/// window's default font follows the step (and Settings › Font, see
-/// `AppFont`), and views use `.scaledFont(.callout)` where they would use
-/// `.font(.callout)`.
+/// Settings › Text Size: ten steps around the platform's standard text
+/// (13 points on macOS, 17 on iOS). macOS ignores Dynamic Type, so the app
+/// sizes its own text: the main window's default font follows the step (and
+/// Settings › Font, see `AppFont`), and views use `.scaledFont(.callout)`
+/// where they would use `.font(.callout)`.
 enum TextSize {
     static let storageKey = "textSize"
     /// Body text point size at each step of the slider.
+    #if os(macOS)
     static let bodyPointSizes: [CGFloat] = [10, 11, 12, 13, 14, 15, 16, 18, 20, 22]
-    /// 13 pt, the size macOS uses everywhere.
+    #else
+    static let bodyPointSizes: [CGFloat] = [14, 15, 16, 17, 18, 19, 20, 22, 24, 26]
+    #endif
+    /// The platform's standard body size: 13 pt on macOS, 17 on iOS.
     static let standardStep = 3
     static var largestStep: Int { bodyPointSizes.count - 1 }
 
@@ -18,6 +24,7 @@ enum TextSize {
         min(max(step, 0), largestStep)
     }
 
+    #if os(macOS)
     /// ⌘= makes text bigger too, as in Safari. The View menu's ⌘+ only
     /// answers to ⇧⌘= on keyboards where + shares the = key.
     static func installEqualsShortcut() {
@@ -30,6 +37,7 @@ enum TextSize {
             return nil
         }
     }
+    #endif
 
     static func pointSize(forStep step: Int) -> CGFloat {
         bodyPointSizes[clamped(step)]
@@ -179,49 +187,73 @@ struct ScaledFont {
             // Exactly the text style, so the standard step looks as it always has.
             .system(style, design: design, weight: weight)
         case .style(let style):
-            .system(size: style.macPointSize * scale, weight: weight ?? style.macWeight, design: design)
+            .system(size: style.standardPointSize * scale, weight: weight ?? style.standardWeight, design: design)
         case .size(let size):
             .system(size: size * scale, weight: weight, design: design)
         }
         return isItalic ? font.italic() : font
     }
 
-    /// `font(scale:family:)` as AppKit draws it, for measuring text before
-    /// laying it out (table columns that fit their contents, say).
-    func nsFont(scale: CGFloat, family: AppFont = .system) -> NSFont {
-        if design != .monospaced, let font = family.nsFont(size: pointSize * scale, weight: resolvedWeight, italic: isItalic) {
+    /// `font(scale:family:)` as AppKit or UIKit draws it, for measuring text
+    /// before laying it out (table columns that fit their contents, say).
+    func platformFont(scale: CGFloat, family: AppFont = .system) -> PlatformFont {
+        if design != .monospaced, let font = family.platformFont(size: pointSize * scale, weight: resolvedWeight, italic: isItalic) {
             return font
         }
         var font = design == .monospaced
-            ? NSFont.monospacedSystemFont(ofSize: pointSize * scale, weight: resolvedWeight.nsWeight)
-            : NSFont.systemFont(ofSize: pointSize * scale, weight: resolvedWeight.nsWeight)
-        if isItalic { font = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask) }
+            ? PlatformFont.monospacedSystemFont(ofSize: pointSize * scale, weight: resolvedWeight.platformWeight)
+            : PlatformFont.systemFont(ofSize: pointSize * scale, weight: resolvedWeight.platformWeight)
+        if isItalic {
+            #if os(macOS)
+            font = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask)
+            #else
+            if let italic = font.fontDescriptor.withSymbolicTraits(.traitItalic) {
+                font = UIFont(descriptor: italic, size: font.pointSize)
+            }
+            #endif
+        }
         return font
     }
 
     /// Width of `text` on one line.
     func width(of text: String, scale: CGFloat, family: AppFont = .system) -> CGFloat {
-        ceil((text as NSString).size(withAttributes: [.font: nsFont(scale: scale, family: family)]).width)
+        ceil((text as NSString).size(withAttributes: [.font: platformFont(scale: scale, family: family)]).width)
     }
 
     /// Point size at the standard step.
     private var pointSize: CGFloat {
         switch base {
-        case .style(let style): style.macPointSize
+        case .style(let style): style.standardPointSize
         case .size(let size): size
         }
     }
 
     private var resolvedWeight: Font.Weight {
         if let weight { return weight }
-        if case .style(let style) = base { return style.macWeight }
+        if case .style(let style) = base { return style.standardWeight }
         return .regular
     }
 }
 
 private extension Font.TextStyle {
-    /// Text styles have fixed sizes on macOS.
-    var macPointSize: CGFloat {
+    /// Text styles' sizes at the standard step: fixed on macOS; on iOS,
+    /// the default (Large) Dynamic Type size.
+    var standardPointSize: CGFloat {
+        #if os(iOS)
+        switch self {
+        case .largeTitle: 34
+        case .title: 28
+        case .title2: 22
+        case .title3: 20
+        case .headline, .body: 17
+        case .callout: 16
+        case .subheadline: 15
+        case .footnote: 13
+        case .caption: 12
+        case .caption2: 11
+        @unknown default: 17
+        }
+        #else
         switch self {
         case .largeTitle: 26
         case .title: 22
@@ -233,9 +265,10 @@ private extension Font.TextStyle {
         case .footnote, .caption, .caption2: 10
         @unknown default: 13
         }
+        #endif
     }
 
-    var macWeight: Font.Weight {
+    var standardWeight: Font.Weight {
         switch self {
         case .headline: .bold
         case .caption2: .medium

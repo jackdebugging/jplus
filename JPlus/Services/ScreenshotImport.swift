@@ -1,4 +1,9 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
+import ImageIO
 import UniformTypeIdentifiers
 
 /// An image ready to attach to a ticket, plus a downscaled PNG for analysis.
@@ -8,15 +13,13 @@ struct Screenshot: Hashable, Sendable {
     let mimeType: String
     let pixelSize: CGSize
 
-    var image: NSImage? { NSImage(data: data) }
+    var image: PlatformImage? { PlatformImage(data: data) }
 
     /// Builds from raw bytes. Formats Jira and browsers handle natively are
     /// kept as-is; anything else (TIFF from the pasteboard, HEIC, …) is
     /// re-encoded as PNG.
     init?(data: Data, filename: String) {
-        guard let image = NSImage(data: data),
-              let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
-        else { return nil }
+        guard let cgImage = ScreenshotImport.cgImage(from: data) else { return nil }
 
         let ext = (filename as NSString).pathExtension.lowercased()
         let keepAsIs: [String: String] = ["png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "gif": "image/gif", "webp": "image/webp"]
@@ -26,7 +29,7 @@ struct Screenshot: Hashable, Sendable {
             self.filename = filename
             self.mimeType = mime
         } else {
-            guard let png = ScreenshotImport.pngData(from: cgImage, maxDimension: nil) else { return nil }
+            guard let png = ScreenshotImport.pngData(from: cgImage) else { return nil }
             self.data = png
             self.filename = ((filename as NSString).deletingPathExtension) + ".png"
             self.mimeType = "image/png"
@@ -37,8 +40,8 @@ struct Screenshot: Hashable, Sendable {
     /// PNG no larger than 1568px on its long edge, which is what vision
     /// models work best with and keeps the upload small.
     func pngForAnalysis() -> Data? {
-        guard let cgImage = image?.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
-        return ScreenshotImport.pngData(from: cgImage, maxDimension: 1568)
+        guard let cgImage = ScreenshotImport.cgImage(from: data, maxDimension: 1568) else { return nil }
+        return ScreenshotImport.pngData(from: cgImage)
     }
 
     var sizeDescription: String {
@@ -76,6 +79,7 @@ enum ScreenshotImport {
         return Screenshot(data: data, filename: url.lastPathComponent)
     }
 
+    #if os(macOS)
     /// Reads an image from the pasteboard (used by the Paste button and ⌘V).
     static func loadFromPasteboard(_ pasteboard: NSPasteboard = .general) -> Screenshot? {
         for url in imageFileURLs(on: pasteboard) {
@@ -110,32 +114,41 @@ enum ScreenshotImport {
             return type.conforms(to: .image)
         }
     }
-
-    static func pngData(from cgImage: CGImage, maxDimension: CGFloat?) -> Data? {
-        let width = CGFloat(cgImage.width)
-        let height = CGFloat(cgImage.height)
-        var scale: CGFloat = 1
-        if let maxDimension, max(width, height) > maxDimension {
-            scale = maxDimension / max(width, height)
+    #else
+    /// Reads an image from the clipboard (used by the Paste button).
+    static func loadFromPasteboard(_ pasteboard: UIPasteboard = .general) -> Screenshot? {
+        for type in [UTType.png, .jpeg, .heic, .tiff] {
+            if let data = pasteboard.data(forPasteboardType: type.identifier),
+               let shot = Screenshot(data: data, filename: defaultFilename(for: type)) {
+                return shot
+            }
         }
-
-        let target: CGImage
-        if scale < 1 {
-            let newWidth = Int(width * scale)
-            let newHeight = Int(height * scale)
-            guard let context = CGContext(
-                data: nil, width: newWidth, height: newHeight, bitsPerComponent: 8, bytesPerRow: 0,
-                space: CGColorSpaceCreateDeviceRGB(),
-                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-            ) else { return nil }
-            context.interpolationQuality = .high
-            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: newWidth, height: newHeight))
-            guard let scaled = context.makeImage() else { return nil }
-            target = scaled
-        } else {
-            target = cgImage
+        if let png = pasteboard.image?.pngData() {
+            return Screenshot(data: png, filename: defaultFilename(for: .png))
         }
-        return NSBitmapImageRep(cgImage: target).representation(using: .png, properties: [:])
+        return nil
+    }
+    #endif
+
+    /// Decodes an image, upright (photos carry their rotation as metadata),
+    /// and no larger than `maxDimension` on its long edge if given.
+    static func cgImage(from data: Data, maxDimension: CGFloat? = nil) -> CGImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        var options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+        ]
+        if let maxDimension { options[kCGImageSourceThumbnailMaxPixelSize] = maxDimension }
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+    }
+
+    static func pngData(from cgImage: CGImage) -> Data? {
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil) else { return nil }
+        CGImageDestinationAddImage(destination, cgImage, nil)
+        guard CGImageDestinationFinalize(destination) else { return nil }
+        return data as Data
     }
 
     private static func defaultFilename(for type: UTType) -> String {

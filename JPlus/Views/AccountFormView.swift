@@ -43,7 +43,7 @@ struct AccountFormView: View {
 
     private var subtitle: String {
         switch mode {
-        case .firstAccount, .add: return "Connect to a Jira Cloud site with an API token. It's saved on this Mac once Jira accepts it."
+        case .firstAccount, .add: return "Connect to a Jira Cloud site with an API token. It's saved on \(Device.this) once Jira accepts it."
         case .edit: return "Changes are checked with Jira before they're saved."
         }
     }
@@ -60,6 +60,15 @@ struct AccountFormView: View {
     }
 
     var body: some View {
+        #if os(macOS)
+        content
+        #else
+        ScrollView { content }
+            .scrollDismissesKeyboard(.interactively)
+        #endif
+    }
+
+    private var content: some View {
         VStack(spacing: 20) {
             VStack(spacing: 6) {
                 if mode == .firstAccount {
@@ -73,26 +82,24 @@ struct AccountFormView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Form {
-                TextField("Site", text: $site, prompt: Text("acme.atlassian.net"))
-                    .focused($focusedField, equals: .site)
-                TextField("Email", text: $email, prompt: Text("you@example.com"))
-                    .focused($focusedField, equals: .email)
-                    .textContentType(.username)
-                SecureField("API token", text: $apiToken,
-                            prompt: Text(editingAccount == nil ? "" : "Leave blank to keep the saved token"))
-                    .focused($focusedField, equals: .token)
-                    .textContentType(.password)
-
-                Link("Create an API token…", destination: Self.tokenHelpURL)
-                    .scaledFont(.callout)
-            }
-            .formStyle(.grouped)
-            .scrollDisabled(true)
-            .frame(maxWidth: 440)
-            .fixedSize(horizontal: false, vertical: true)
-            .disabled(isSaving)
-            .onSubmit(submit)
+            #if os(macOS)
+            Form { fields }
+                .formStyle(.grouped)
+                .scrollDisabled(true)
+                .frame(maxWidth: 440)
+                .fixedSize(horizontal: false, vertical: true)
+                .disabled(isSaving)
+                .onSubmit(submit)
+            #else
+            // A Form scrolls on iOS and collapses inside this stack.
+            VStack(alignment: .leading, spacing: 12) { fields }
+                .textFieldStyle(.roundedBorder)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .frame(maxWidth: 440)
+                .disabled(isSaving)
+                .onSubmit(submit)
+            #endif
 
             if let errorMessage {
                 Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
@@ -128,6 +135,34 @@ struct AccountFormView: View {
         .padding(28)
         .frame(minWidth: mode == .firstAccount ? nil : 500)
         .onAppear(perform: prefill)
+    }
+
+    /// A Mac form shows the label beside the field; iOS fields show only the prompt.
+    #if os(macOS)
+    private static let tokenPrompt = ""
+    #else
+    private static let tokenPrompt = "API token"
+    #endif
+
+    @ViewBuilder private var fields: some View {
+        TextField("Site", text: $site, prompt: Text(verbatim: "acme.atlassian.net"))
+            .focused($focusedField, equals: .site)
+            #if os(iOS)
+            .keyboardType(.URL)
+            #endif
+        TextField("Email", text: $email, prompt: Text(verbatim: "you@example.com"))
+            .focused($focusedField, equals: .email)
+            .textContentType(.username)
+            #if os(iOS)
+            .keyboardType(.emailAddress)
+            #endif
+        SecureField("API token", text: $apiToken,
+                    prompt: Text(editingAccount == nil ? Self.tokenPrompt : "Leave blank to keep the saved token"))
+            .focused($focusedField, equals: .token)
+            .textContentType(.password)
+
+        Link("Create an API token…", destination: Self.tokenHelpURL)
+            .scaledFont(.callout)
     }
 
     private func prefill() {

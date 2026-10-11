@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 
 /// Sendable column sort for issue tables (Swift 6–safe alternative to `KeyPathComparator` in `@State`).
@@ -111,7 +110,7 @@ struct IssueListView<FilterAccessory: View>: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .background(RoundedRectangle(cornerRadius: 8).fill(Color(nsColor: .controlBackgroundColor)))
+            .background(RoundedRectangle(cornerRadius: 8).fill(Color.controlBackground))
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
                     .strokeBorder(Color.secondary.opacity(filterFocused ? 0.45 : 0.22))
@@ -144,7 +143,7 @@ struct IssueListView<FilterAccessory: View>: View {
         /// Space a table cell adds around its content.
         let cellInset: CGFloat = 16
         /// A header's title plus its sort indicator.
-        let headerFont = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize, weight: .medium)
+        let headerFont = PlatformFont.systemFont(ofSize: PlatformFont.smallSystemFontSize, weight: .medium)
         let sortIndicatorWidth: CGFloat = 18
         let issues = displayedIssues
         func fitted(_ header: String, _ widths: [CGFloat]) -> CGFloat {
@@ -213,13 +212,11 @@ struct IssueListView<FilterAccessory: View>: View {
                     let url = client.browseURL(for: key)
                     Button("Open in Jira") { openURL(url) }
                     Button("Copy URL") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                        Clipboard.copy(url.absoluteString)
                     }
                 }
                 Button("Copy Key") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(key, forType: .string)
+                    Clipboard.copy(key)
                 }
             }
         } primaryAction: { ids in

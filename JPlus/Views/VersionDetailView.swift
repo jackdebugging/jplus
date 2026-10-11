@@ -76,7 +76,7 @@ struct VersionDetailView: View {
             }
         }
         .navigationTitle(version.name)
-        .navigationSubtitle(route.project.name)
+        .navigationSubtitleIfAvailable(route.project.name)
         .toolbar {
             ToolbarItemGroup(placement: .secondaryAction) {
                 Button("Refresh", systemImage: "arrow.clockwise") {
@@ -118,7 +118,9 @@ struct VersionDetailView: View {
             // A strip tall enough to grab, with the line through its middle.
             .frame(height: 7)
             .contentShape(Rectangle())
+            #if os(macOS)
             .pointerStyle(.rowResize)
+            #endif
             .gesture(
                 DragGesture(minimumDistance: 1, coordinateSpace: .global)
                     .onChanged { drag in
@@ -257,11 +259,11 @@ struct VersionDetailView: View {
             VStack(spacing: 0) {
                 IssueListView(issues: shownIssues, onOpen: onOpenIssue) {
                     Toggle("Hide completed", isOn: $hideCompleted)
-                        .toggleStyle(.checkbox)
+                        .checkboxToggleStyle()
                         .fixedSize()
                         .help("Hide issues from Ready for QA onward: QA, Ready for UAT, UAT, and done statuses such as Done and Won't Do")
                     Toggle("Only show \(Self.appTeamName)", isOn: $onlyAppTeam)
-                        .toggleStyle(.checkbox)
+                        .checkboxToggleStyle()
                         .fixedSize()
                         .help("Show only issues assigned to a member of \(Self.appTeamName) in Atlassian Teams")
                     Button("Open in Jira", systemImage: "safari") {
@@ -275,14 +277,15 @@ struct VersionDetailView: View {
                         Button("Copy URL") {
                             Task {
                                 guard let url = await listURL() else { return }
-                                NSPasteboard.general.clearContents()
-                                NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                                Clipboard.copy(url.absoluteString)
                             }
                         }
                     }
                 }
+                #if os(macOS)
                 // Blank rather than striped when empty, or the stripes behind the message read as rows.
                 .alternatingRowBackgrounds(shownIssues.isEmpty ? .disabled : .automatic)
+                #endif
                 // An overlay rather than its own branch, so the toggles stay on screen to turn back off.
                 .overlay {
                     if onlyAppTeam, let appTeamError {

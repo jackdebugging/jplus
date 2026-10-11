@@ -46,7 +46,7 @@ mkdir -p "$BUILD"
 
 echo "Archiving…"
 xcodebuild -project JPlus.xcodeproj -scheme JPlus -configuration Release \
-    -archivePath "$ARCHIVE" DEVELOPMENT_TEAM="$TEAM" -allowProvisioningUpdates archive -quiet
+    -destination "generic/platform=macOS" -archivePath "$ARCHIVE" DEVELOPMENT_TEAM="$TEAM" -allowProvisioningUpdates archive -quiet
 
 echo "Exporting with Developer ID…"
 xcodebuild -exportArchive -archivePath "$ARCHIVE" \

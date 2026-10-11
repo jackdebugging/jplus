@@ -108,7 +108,7 @@ struct FuzzySearchView: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 9)
-            .background(Capsule().fill(Color(nsColor: .controlBackgroundColor)))
+            .background(Capsule().fill(Color.controlBackground))
             .overlay(Capsule().strokeBorder(Color.secondary.opacity(fieldFocused ? 0.5 : 0.25)))
             .frame(maxWidth: 680)
 
@@ -123,12 +123,12 @@ struct FuzzySearchView: View {
             .fixedSize()
 
             Toggle("Open only", isOn: $openOnly)
-                .toggleStyle(.checkbox)
+                .checkboxToggleStyle()
 
             Spacer(minLength: 0)
 
             Button("Advanced (JQL)", action: onAdvanced)
-                .buttonStyle(.link)
+                .linkButtonStyle()
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
@@ -192,7 +192,7 @@ struct FuzzySearchView: View {
                         HStack(spacing: 4) {
                             Text("Did you mean:").foregroundStyle(.red)
                             Button(suggestion) { query = suggestion }
-                                .buttonStyle(.link)
+                                .linkButtonStyle()
                                 .scaledFont(.body.italic().bold())
                         }
                     }
@@ -284,7 +284,7 @@ private struct SearchResultRow: View {
             Button(action: onOpen) {
                 Text(Highlighter.title(hit.summary, matched: hit.matchedTitleWords))
                     .scaledFont(.title3)
-                    .foregroundStyle(Color(nsColor: .linkColor))
+                    .foregroundStyle(Color.link)
                     .underline(isHovering)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
@@ -305,8 +305,7 @@ private struct SearchResultRow: View {
         .contextMenu {
             Button("Open \(hit.key)", action: onOpen)
             Button("Copy Key") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(hit.key, forType: .string)
+                Clipboard.copy(hit.key)
             }
         }
     }

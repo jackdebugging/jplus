@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 
 /// Settings › Font: the typeface for the main window's text. Inter lives in
@@ -24,7 +23,7 @@ enum AppFont: String, CaseIterable, Identifiable {
     /// One line for the Settings footer.
     var detail: String {
         switch self {
-        case .system: "San Francisco, the macOS font."
+        case .system: "San Francisco, the system font."
         case .inter: "The screen font Linear, Figma and GitHub use."
         }
     }
@@ -51,24 +50,37 @@ enum AppFont: String, CaseIterable, Identifiable {
     /// The family at `size` with `weight`, italic if asked; nil for the system
     /// font or if the family isn't available.
     func font(size: CGFloat, weight: Font.Weight, italic: Bool) -> Font? {
-        nsFont(size: size, weight: weight, italic: italic).map(Font.init)
+        platformFont(size: size, weight: weight, italic: italic).map(Font.init)
     }
 
-    /// `font(size:weight:italic:)` as AppKit sees it, for measuring text.
-    func nsFont(size: CGFloat, weight: Font.Weight, italic: Bool) -> NSFont? {
+    /// `font(size:weight:italic:)` as AppKit or UIKit sees it, for measuring text.
+    func platformFont(size: CGFloat, weight: Font.Weight, italic: Bool) -> PlatformFont? {
         guard let familyName else { return nil }
+        #if os(macOS)
         var symbolic: NSFontDescriptor.SymbolicTraits = []
         if italic { symbolic.insert(.italic) }
         let descriptor = NSFontDescriptor(fontAttributes: [
             .family: familyName,
             .traits: [
-                NSFontDescriptor.TraitKey.weight: weight.nsWeight.rawValue,
+                NSFontDescriptor.TraitKey.weight: weight.platformWeight.rawValue,
                 NSFontDescriptor.TraitKey.symbolic: symbolic.rawValue,
             ],
         ])
-        guard let nsFont = NSFont(descriptor: descriptor, size: size),
-              nsFont.familyName == familyName else { return nil }
-        return nsFont
+        guard let font = NSFont(descriptor: descriptor, size: size) else { return nil }
+        #else
+        var symbolic: UIFontDescriptor.SymbolicTraits = []
+        if italic { symbolic.insert(.traitItalic) }
+        let descriptor = UIFontDescriptor(fontAttributes: [
+            .family: familyName,
+            .traits: [
+                UIFontDescriptor.TraitKey.weight: weight.platformWeight.rawValue,
+                UIFontDescriptor.TraitKey.symbolic: symbolic.rawValue,
+            ],
+        ])
+        let font = UIFont(descriptor: descriptor, size: size)
+        #endif
+        guard font.familyName == familyName else { return nil }
+        return font
     }
 }
 
@@ -78,7 +90,7 @@ extension EnvironmentValues {
 }
 
 extension Font.Weight {
-    var nsWeight: NSFont.Weight {
+    var platformWeight: PlatformFont.Weight {
         switch self {
         case .ultraLight: .ultraLight
         case .thin: .thin

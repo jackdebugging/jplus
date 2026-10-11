@@ -64,9 +64,9 @@ struct VersionsView: View {
             }
             Spacer()
             Toggle("Show released", isOn: $showReleased)
-                .toggleStyle(.checkbox)
+                .checkboxToggleStyle()
             Toggle("Show archived", isOn: $showArchived)
-                .toggleStyle(.checkbox)
+                .checkboxToggleStyle()
         }
         .padding(12)
     }

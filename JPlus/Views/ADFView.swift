@@ -315,7 +315,7 @@ private struct AttachmentImage: View {
     let maxWidth: CGFloat?
     let isThumbnail: Bool
 
-    @State private var image: NSImage?
+    @State private var image: PlatformImage?
     @State private var failed = false
 
     private let shape = RoundedRectangle(cornerRadius: 6)
@@ -329,14 +329,13 @@ private struct AttachmentImage: View {
                     picture(image)
                 }
                 .buttonStyle(.plain)
-                .pointerStyle(.link)
+                .linkPointer()
                 .help("\(attachment.filename) — click to preview")
                 .accessibilityLabel(attachment.filename)
                 .contextMenu {
                     Button("Quick Look") { Task { await context.preview(attachment) } }
                     Button("Copy Image") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.writeObjects([image])
+                        Clipboard.copy(image)
                     }
                 }
             } else if failed {
@@ -355,16 +354,16 @@ private struct AttachmentImage: View {
     }
 
     @ViewBuilder
-    private func picture(_ image: NSImage) -> some View {
+    private func picture(_ image: PlatformImage) -> some View {
         if isThumbnail {
-            Image(nsImage: image)
+            Image(platformImage: image)
                 .resizable()
                 .aspectRatio(contentMode: .fill)
                 .frame(width: 160, height: 120)
                 .clipShape(shape)
                 .overlay(shape.strokeBorder(.quaternary))
         } else {
-            Image(nsImage: image)
+            Image(platformImage: image)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .clipShape(shape)

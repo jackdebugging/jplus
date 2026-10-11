@@ -45,6 +45,18 @@ A stable signature matters: the token lives in the legacy Keychain, whose
 access list is keyed on the app's designated requirement. Ad-hoc signing changes
 that on every build and triggers a Keychain prompt each launch.
 
+## Releases
+
+Download the latest build from [sichx/jplus-releases](https://github.com/sichx/jplus-releases): open `JPlus.dmg` and drag JPlus to Applications. Builds are signed with Developer ID (team 89V5HKLEV9) and notarized by Apple.
+
+To publish a release, bump the Marketing Version in Xcode, commit, and run:
+
+```bash
+scripts/release.sh
+```
+
+That runs `scripts/notarize.sh` (Release archive, Developer ID export, notarization, stapling), wraps the app in a disk image, notarizes and staples the image, publishes it as a GitHub release on `jplus-releases` with notes from the commits since the previous tag, and tags this repository `v<version>`. One-time setup for a new Mac is described at the top of `scripts/notarize.sh`.
+
 ## Troubleshooting
 
 - **App hangs at launch with no window** after a signing change: the sandbox

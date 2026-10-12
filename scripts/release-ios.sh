@@ -7,7 +7,8 @@
 # Distribution certificate and the App Store profile on first use.
 #
 # One-time setup: create the app in App Store Connect (My Apps › + › New App)
-# with bundle ID com.hannagrove.jplus.ios. Uploads fail until it exists.
+# with bundle ID com.hannagrove.jplus.mac, the same one the Mac app uses.
+# Uploads fail until it exists.
 #
 # The version is the project's Marketing Version, shared with the Mac app;
 # the build number is the commit count, so every upload from a new commit

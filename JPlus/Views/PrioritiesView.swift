@@ -13,26 +13,27 @@ struct PrioritiesView: View {
     @AppStorage("prioritiesFolderURL") private var folderInput = ""
     @AppStorage("prioritiesShowsDayList") private var showsDayListColumn = true
     #if os(iOS)
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    /// On an iPhone the day list is a sheet, opened only when asked for.
+    /// On iPhone and iPad the day list is a sheet, opened only when asked for.
     @State private var showsDayListSheet = false
-    private var isCompact: Bool { horizontalSizeClass == .compact }
+    private let usesDayListSheet = true
     #else
-    private let isCompact = false
+    private let usesDayListSheet = false
     #endif
 
     private var showsDayList: Bool {
         get {
             #if os(iOS)
-            if isCompact { return showsDayListSheet }
-            #endif
+            return showsDayListSheet
+            #else
             return showsDayListColumn
+            #endif
         }
         nonmutating set {
             #if os(iOS)
-            if isCompact { showsDayListSheet = newValue; return }
-            #endif
+            showsDayListSheet = newValue
+            #else
             showsDayListColumn = newValue
+            #endif
         }
     }
     @State private var model = PrioritiesModel()
@@ -53,6 +54,10 @@ struct PrioritiesView: View {
     var body: some View {
         content
             .navigationTitle("Daily Priorities")
+            .adaptiveInspector(isPresented: Binding(get: { showsDayList && folderID != nil }, set: { showsDayList = $0 })) {
+                PriorityDayList(model: model)
+                    .inspectorColumnWidth(min: 180, ideal: 220, max: 320)
+            }
             .toolbar {
                 ToolbarItemGroup(placement: .primaryAction) {
                     Button("New Day", systemImage: "calendar.badge.plus") {
@@ -63,7 +68,7 @@ struct PrioritiesView: View {
                     .help("Start a day's priorities")
                     .disabled(model.folder == nil)
                     .popover(isPresented: $isPickingNewDay, arrowEdge: .bottom) { newDayPicker }
-                    Button(showsDayList ? "Hide Days" : "Show Days", systemImage: isCompact ? "calendar" : "sidebar.right") {
+                    Button(showsDayList ? "Hide Days" : "Show Days", systemImage: usesDayListSheet ? "calendar" : "sidebar.right") {
                         showsDayList.toggle()
                     }
                     .help(showsDayList ? "Hide the list of days" : "Show the list of days")
@@ -85,13 +90,9 @@ struct PrioritiesView: View {
                     }
                 }
             }
-            .adaptiveInspector(isPresented: Binding(get: { showsDayList && folderID != nil }, set: { showsDayList = $0 })) {
-                PriorityDayList(model: model)
-                    .inspectorColumnWidth(min: 180, ideal: 220, max: 320)
-            }
             .onChange(of: model.selectedID) {
                 // Picking a day from the sheet shows it.
-                if isCompact { showsDayList = false }
+                if usesDayListSheet { showsDayList = false }
             }
             .loadTask(id: folderID) {
                 guard let client = session.client else { return }

@@ -141,9 +141,10 @@ extension View {
         #endif
     }
 
-    /// A trailing inspector column where there's room; on an iPhone, a
-    /// half-height sheet instead, since `.inspector` there hides the
-    /// navigation bar's title and buttons.
+    /// A trailing inspector column on the Mac; a half-height sheet on iPhone
+    /// and iPad. On iPhone `.inspector` hides the navigation bar's title and
+    /// buttons, and on iPad an inspector on the first screen of a split
+    /// view's detail column lays the screen out again and again, forever.
     func adaptiveInspector<Inspector: View>(isPresented: Binding<Bool>, @ViewBuilder content: @escaping () -> Inspector) -> some View {
         modifier(AdaptiveInspector(isPresented: isPresented, inspector: content))
     }
@@ -173,20 +174,13 @@ extension View {
 private struct AdaptiveInspector<Inspector: View>: ViewModifier {
     @Binding var isPresented: Bool
     let inspector: () -> Inspector
-    #if os(iOS)
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    #endif
 
     func body(content: Content) -> some View {
         #if os(iOS)
-        if horizontalSizeClass == .compact {
-            content.sheet(isPresented: $isPresented) {
-                inspector()
-                    .presentationDetents([.medium, .large])
-                    .presentationDragIndicator(.visible)
-            }
-        } else {
-            content.inspector(isPresented: $isPresented, content: inspector)
+        content.sheet(isPresented: $isPresented) {
+            inspector()
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
         }
         #else
         content.inspector(isPresented: $isPresented, content: inspector)

@@ -26,16 +26,16 @@ struct IssueDetailView: View {
     @State private var attachmentError: String?
     @AppStorage("showIssueDetailsPane") private var showsDetailsColumn = true
     #if os(iOS)
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    /// On an iPhone the pane is a sheet, opened only when asked for.
+    /// On iPhone and iPad the pane is a sheet, opened only when asked for.
     @State private var showsDetailsSheet = false
     #endif
 
     private var showDetailsPane: Binding<Bool> {
         #if os(iOS)
-        if horizontalSizeClass == .compact { return $showsDetailsSheet }
-        #endif
+        return $showsDetailsSheet
+        #else
         return $showsDetailsColumn
+        #endif
     }
 
     var body: some View {

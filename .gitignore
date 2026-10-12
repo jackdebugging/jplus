@@ -21,3 +21,6 @@ jira_token
 *.token
 .env
 .app_specific_pwd
+
+# Claude Code (worktrees, local settings)
+.claude/

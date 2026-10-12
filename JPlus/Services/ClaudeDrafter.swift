@@ -56,3 +56,13 @@ struct ClaudeDrafter: Sendable {
         }
     }
 }
+
+/// What Draft with Claude shares, worded once for the consent prompt and
+/// Settings. Keep it in step with what `ClaudeDrafter.draft` sends.
+enum ClaudeSharing {
+    static let consentKey = "claudeSharingAllowed"
+
+    static let consentMessage = "Draft with Claude sends this screenshot, your notes, and the project's name and issue types to Anthropic, the maker of Claude, using your API key. Anthropic processes them under its API terms. Nothing else from Jira is sent, and nothing is sent unless you press Draft with Claude."
+
+    static let settingsFooter = "When you press Draft with Claude, the screenshot, your notes, and the project's name and issue types are sent to Anthropic, the maker of Claude, through its API with your key. You're asked before the first time. The key is stored in your Keychain."
+}

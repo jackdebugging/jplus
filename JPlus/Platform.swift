@@ -240,6 +240,20 @@ private struct AppSettingsHost: ViewModifier {
     #endif
 }
 
+enum AppInfo {
+    /// Shown wherever the app names Jira or Confluence, so nobody takes it
+    /// for an Atlassian product.
+    static let trademarkNotice = "JPlus is an independent app, not affiliated with or endorsed by Atlassian. Jira and Confluence are trademarks of Atlassian."
+
+    /// "1.0.0 (41)".
+    static var version: String {
+        let info = Bundle.main.infoDictionary
+        let short = info?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = info?["CFBundleVersion"] as? String ?? "?"
+        return "\(short) (\(build))"
+    }
+}
+
 enum Device {
     /// "this Mac", "this iPhone" or "this iPad", for messages about what's
     /// stored locally.

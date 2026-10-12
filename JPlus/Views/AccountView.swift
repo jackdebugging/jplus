@@ -39,7 +39,7 @@ struct AccountView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Label("Draft with Claude", systemImage: "sparkles")
                     .scaledFont(.headline)
-                Text("Screenshot parsing on the New Ticket screen uses this Claude API key. It is stored in your Keychain and only used when you press Draft with Claude.")
+                Text(ClaudeSharing.settingsFooter)
                     .scaledFont(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

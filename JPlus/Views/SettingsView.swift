@@ -9,7 +9,7 @@ struct SettingsView: View {
             } header: {
                 Text("Draft with Claude")
             } footer: {
-                Text("Used only when you press Draft with Claude on a new ticket. The screenshot and your notes are sent to Anthropic's API; the key is stored in your Keychain.")
+                Text(ClaudeSharing.settingsFooter)
                     .foregroundStyle(.secondary)
             }
             #if os(macOS)
@@ -20,6 +20,14 @@ struct SettingsView: View {
             }
             #endif
             StorageSection()
+            Section {
+                LabeledContent("Version", value: AppInfo.version)
+            } header: {
+                Text("About")
+            } footer: {
+                Text(AppInfo.trademarkNotice)
+                    .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
         #if os(macOS)

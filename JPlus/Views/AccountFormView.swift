@@ -131,6 +131,15 @@ struct AccountFormView: View {
                 .disabled(!canSubmit)
             }
             .controlSize(.large)
+
+            if mode == .firstAccount {
+                Text(AppInfo.trademarkNotice)
+                    .scaledFont(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 440)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .padding(28)
         .frame(minWidth: mode == .firstAccount ? nil : 500)

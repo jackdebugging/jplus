@@ -44,6 +44,10 @@ struct NewTicketView: View {
     @State private var showingFileImporter = false
     @State private var isLoadingTypes = false
     @State private var isDrafting = false
+    /// Asking before the first draft sends anything to Anthropic.
+    @State private var confirmsClaudeSharing = false
+    /// Set once the user agrees; kept app-wide rather than per account.
+    @AppStorage(ClaudeSharing.consentKey, store: .standard) private var allowsClaudeSharing = false
     @State private var isCreating = false
     @State private var progress: String?
     @State private var errorMessage: String?
@@ -284,7 +288,7 @@ struct NewTicketView: View {
                             .textFieldStyle(.roundedBorder)
                             .labelsHidden()
                             .lineLimit(2...5)
-                        Text("Not sent to Jira; only used when drafting.")
+                        Text("Not sent to Jira; sent to Anthropic only when you draft.")
                             .scaledFont(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -359,7 +363,11 @@ struct NewTicketView: View {
     private var draftButton: some View {
         if settings.hasClaudeAPIKey {
             Button {
-                Task { await draftWithClaude() }
+                if allowsClaudeSharing {
+                    Task { await draftWithClaude() }
+                } else {
+                    confirmsClaudeSharing = true
+                }
             } label: {
                 if isDrafting {
                     HStack(spacing: 6) {
@@ -373,6 +381,15 @@ struct NewTicketView: View {
             .buttonStyle(.borderedProminent)
             .disabled(screenshot == nil || isDrafting || isCreating)
             .help(screenshot == nil ? "Add a screenshot first" : "Fill summary, description and type from the screenshot")
+            .alert("Send to Anthropic?", isPresented: $confirmsClaudeSharing) {
+                Button("Send") {
+                    allowsClaudeSharing = true
+                    Task { await draftWithClaude() }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(ClaudeSharing.consentMessage)
+            }
         } else {
             Button("Enable Draft with Claude…", systemImage: "sparkles") { openSettings() }
                 .help("Add a Claude API key in Settings")

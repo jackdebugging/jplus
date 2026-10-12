@@ -245,12 +245,9 @@ struct HomeView: View {
                 .foregroundStyle(.secondary)
                 .frame(width: 11, height: 15)
                 .accessibilityHidden(true)
-            Text("for Atlassian\(Text("TM").font(.system(size: 7, weight: .semibold)).baselineOffset(6))")
+            Text("JPlus")
                 .font(.system(size: 13, weight: .semibold))
                 .lineLimit(1)
-                // Shrink a little in a narrow sidebar instead of truncating.
-                .minimumScaleFactor(0.75)
-                .accessibilityLabel("for Atlassian trademark")
             Spacer(minLength: 6)
             #if os(iOS)
             // ⌘K on the Mac; without a keyboard it needs a button.

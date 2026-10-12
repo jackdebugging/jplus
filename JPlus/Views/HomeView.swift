@@ -157,19 +157,19 @@ struct HomeView: View {
         VStack(spacing: 0) {
             sidebarHeader
             List(selection: $selection) {
+                #if os(macOS)
                 DisclosureGroup(isExpanded: $versionsExpanded) {
-                    ForEach(sidebarVersions, id: \.version.id) { route in
-                        SidebarVersionRow(version: route.version)
-                            .tag(SidebarItem.version(route))
-                    }
+                    sidebarVersionRows
                 } label: {
-                    HStack(spacing: 4) {
-                        Label("Versions", systemImage: "shippingbox")
-                        Spacer(minLength: 4)
-                        refreshVersionsButton
-                    }
-                    .tag(SidebarItem.versions)
+                    versionsRow
                 }
+                #else
+                // On iOS a disclosure group's label only expands and collapses,
+                // so Versions could never be opened; its versions sit beneath it.
+                versionsRow
+                sidebarVersionRows
+                    .padding(.leading, 20)
+                #endif
                 Label("My Issues", systemImage: "person.crop.square")
                     .tag(SidebarItem.myIssues)
                 Label("Mentions", systemImage: "at")
@@ -194,6 +194,22 @@ struct HomeView: View {
 
             Divider()
             accountFooter
+        }
+    }
+
+    private var versionsRow: some View {
+        HStack(spacing: 4) {
+            Label("Versions", systemImage: "shippingbox")
+            Spacer(minLength: 4)
+            refreshVersionsButton
+        }
+        .tag(SidebarItem.versions)
+    }
+
+    private var sidebarVersionRows: some View {
+        ForEach(sidebarVersions, id: \.version.id) { route in
+            SidebarVersionRow(version: route.version)
+                .tag(SidebarItem.version(route))
         }
     }
 

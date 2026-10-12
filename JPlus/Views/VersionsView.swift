@@ -22,6 +22,8 @@ struct VersionsView: View {
     @State private var isLoadingProjects = true
     @State private var isLoadingVersions = false
     @State private var errorMessage: String?
+    /// Asks for a project when Versions opens without one.
+    @State private var isChoosingProject = false
 
     private var project: JiraProject? { projects.first { $0.key == projectKey } }
     private var unreleased: [JiraVersion] { versions.filter { !$0.released && !$0.archived } }
@@ -44,24 +46,32 @@ struct VersionsView: View {
                 .disabled(projectKey.isEmpty)
             }
         }
-        .task { await loadProjects() }
+        .task {
+            await loadProjects()
+            if projectKey.isEmpty && !projects.isEmpty { isChoosingProject = true }
+        }
         .task(id: projectKey) { await loadVersions() }
+        .sheet(isPresented: $isChoosingProject) {
+            ProjectChooser(projects: projects) { projectKey = $0.key }
+        }
     }
 
     private var header: some View {
-        HStack(spacing: 12) {
-            if isLoadingProjects && projects.isEmpty {
-                ProgressView().controlSize(.small)
-                Text("Loading projects…").foregroundStyle(.secondary)
-            } else {
-                Picker("Project", selection: $projectKey) {
-                    if projectKey.isEmpty { Text("Choose…").tag("") }
-                    ForEach(projects) { project in
-                        Text("\(project.key) · \(project.name)").tag(project.key)
-                    }
-                }
-                .frame(maxWidth: 380)
+        #if os(iOS)
+        // Too narrow on an iPhone for the project and both toggles in one row.
+        VStack(alignment: .leading, spacing: 8) {
+            projectPicker
+            HStack(spacing: 20) {
+                Toggle("Released", isOn: $showReleased).fixedSize()
+                Toggle("Archived", isOn: $showArchived).fixedSize()
             }
+            .scaledFont(.subheadline)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        #else
+        HStack(spacing: 12) {
+            projectPicker
             Spacer()
             Toggle("Show released", isOn: $showReleased)
                 .checkboxToggleStyle()
@@ -69,6 +79,25 @@ struct VersionsView: View {
                 .checkboxToggleStyle()
         }
         .padding(12)
+        #endif
+    }
+
+    @ViewBuilder
+    private var projectPicker: some View {
+        if isLoadingProjects && projects.isEmpty {
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("Loading projects…").foregroundStyle(.secondary)
+            }
+        } else {
+            Picker("Project", selection: $projectKey) {
+                if projectKey.isEmpty { Text("Choose…").tag("") }
+                ForEach(projects) { project in
+                    Text("\(project.key) · \(project.name)").tag(project.key)
+                }
+            }
+            .frame(maxWidth: 380)
+        }
     }
 
     @ViewBuilder
@@ -82,8 +111,14 @@ struct VersionsView: View {
                 Button("Try Again") { Task { await loadVersions() } }
             }
         } else if projectKey.isEmpty {
-            ScaledContentUnavailableView("Choose a Project", systemImage: "shippingbox",
-                                         description: Text("Versions are listed per project."))
+            ScaledContentUnavailableView {
+                Label("Choose a Project", systemImage: "shippingbox")
+            } description: {
+                Text("Versions are listed per project.")
+            } actions: {
+                Button("Choose Project…") { isChoosingProject = true }
+                    .disabled(projects.isEmpty)
+            }
         } else if isLoadingVersions && versions.isEmpty {
             ProgressView("Loading versions…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -162,6 +197,65 @@ struct VersionsView: View {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+}
+
+// MARK: - Project chooser
+
+/// Modal list of projects, filtered as you type; picking one closes it.
+private struct ProjectChooser: View {
+    let projects: [JiraProject]
+    let onChoose: (JiraProject) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var filter = ""
+
+    private var shown: [JiraProject] {
+        let needle = filter.trimmingCharacters(in: .whitespaces)
+        guard !needle.isEmpty else { return projects }
+        return projects.filter {
+            $0.key.localizedCaseInsensitiveContains(needle) || $0.name.localizedCaseInsensitiveContains(needle)
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List(shown) { project in
+                Button {
+                    onChoose(project)
+                    dismiss()
+                } label: {
+                    HStack(spacing: 10) {
+                        Text(project.key)
+                            .scaledFont(.body.monospaced())
+                            .foregroundStyle(.secondary)
+                        Text(project.name)
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            .overlay {
+                if shown.isEmpty {
+                    ScaledContentUnavailableView("No Matching Projects", systemImage: "magnifyingglass")
+                }
+            }
+            .searchable(text: $filter, prompt: "Filter projects")
+            .navigationTitle("Choose a Project")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
+        #if os(macOS)
+        .frame(width: 420, height: 460)
+        #endif
     }
 }
 

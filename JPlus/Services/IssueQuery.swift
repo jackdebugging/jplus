@@ -56,6 +56,10 @@ final class IssueQuery {
                 nextPageToken = page.nextPageToken
                 hasMore = page.nextPageToken != nil && page.isLast != true
             }
+        } catch where error.isCancellation {
+            // Not run as far as the screen is concerned: it runs again when it reappears.
+            guard generation == self.generation, replacing, issues.isEmpty else { return }
+            hasRun = false
         } catch {
             guard generation == self.generation else { return }
             if replacing { issues = [] }

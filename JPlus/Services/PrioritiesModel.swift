@@ -69,7 +69,9 @@ final class PrioritiesModel {
         let myGeneration = generation
         isLoading = true
         errorMessage = nil
-        defer { if myGeneration == generation { isLoading = false; hasLoaded = true } }
+        var cancelled = false
+        // A cancelled load doesn't count as loaded, so the spinner stays until it runs again.
+        defer { if myGeneration == generation { isLoading = false; if !cancelled { hasLoaded = true } } }
         do {
             async let folder = client.confluenceFolder(id: folderID)
             let children = try await client.confluenceFolderChildren(id: folderID)
@@ -108,6 +110,8 @@ final class PrioritiesModel {
             await withTaskGroup(of: Void.self) { group in
                 for id in shownIDs { group.addTask { await self.loadPage(id) } }
             }
+        } catch where error.isCancellation {
+            cancelled = true
         } catch {
             guard myGeneration == generation else { return }
             errorMessage = error.localizedDescription
@@ -140,6 +144,8 @@ final class PrioritiesModel {
         do {
             let page = try await client.confluencePage(id: pageID)
             pages[pageID] = PriorityDay(page: page, day: ref.day, siteURL: client.credentials.siteURL)
+        } catch where error.isCancellation {
+            return
         } catch {
             errorMessage = "Couldn't load \(ref.title): \(error.localizedDescription)"
         }

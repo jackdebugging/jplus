@@ -93,7 +93,7 @@ struct PrioritiesView: View {
                 // Picking a day from the sheet shows it.
                 if isCompact { showsDayList = false }
             }
-            .task(id: folderID) {
+            .loadTask(id: folderID) {
                 guard let client = session.client else { return }
                 if let folderID {
                     await model.load(client: client, folderID: folderID)
@@ -131,6 +131,8 @@ struct PrioritiesView: View {
             } else {
                 findFailureMessage = "No \"\(PriorityNaming.folderTitle)\" folder was found inside a \"\(PriorityNaming.parentFolderTitle)s\" folder on \(client.credentials.siteHost)."
             }
+        } catch where error.isCancellation {
+            return
         } catch {
             findFailureMessage = "Couldn't search \(client.credentials.siteHost) for the folder. \(error.localizedDescription)"
         }

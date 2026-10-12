@@ -53,6 +53,8 @@ struct AccountFormView: View {
     }
 
     private var canSubmit: Bool {
+        // The App Review demo needs only the site or the email.
+        if DemoSite.isDemo(site: site, email: email) { return !isSaving }
         let hasSite = !site.trimmingCharacters(in: .whitespaces).isEmpty
         let hasEmail = !email.trimmingCharacters(in: .whitespaces).isEmpty
         let hasToken = !apiToken.isEmpty || editingAccount != nil

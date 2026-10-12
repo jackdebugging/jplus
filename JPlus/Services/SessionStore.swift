@@ -232,6 +232,8 @@ final class SessionStore {
     }
 
     static func makeCredentials(site: String, email: String, apiToken: String) throws -> JiraCredentials {
+        // App Review's demo: no real site, and the token isn't checked.
+        if DemoSite.isDemo(site: site, email: email) { return .demo(email: email, apiToken: apiToken) }
         guard let siteURL = JiraSite.normalize(site) else { throw SignInError.invalidSite }
         let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedToken = apiToken.trimmingCharacters(in: .whitespacesAndNewlines)

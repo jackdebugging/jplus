@@ -96,8 +96,8 @@ struct VersionDetailView: View {
                 }
             }
         }
-        .task { await run() }
-        .task { await loadHighlights() }
+        .loadTask { await run() }
+        .loadTask { await loadHighlights() }
         .onChange(of: hideCompleted) { Task { await run() } }
         .onChange(of: onlyAppTeam) { Task { await run() } }
     }
@@ -141,13 +141,10 @@ struct VersionDetailView: View {
             if let description = nonEmpty(version.description) ?? highlights?.description {
                 Text(description).foregroundStyle(.secondary).textSelection(.enabled)
             }
-            HStack(spacing: 20) {
-                if let start = version.startDay {
-                    Label("Start \(start.formatted(date: .abbreviated, time: .omitted))", systemImage: "calendar")
-                }
-                if let release = version.releaseDay {
-                    Label("Release \(release.formatted(date: .abbreviated, time: .omitted))", systemImage: "flag.checkered")
-                }
+            // Side by side where they fit, stacked on a narrow iPhone.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 20) { versionDates }
+                VStack(alignment: .leading, spacing: 4) { versionDates }
             }
             .scaledFont(.callout)
             .foregroundStyle(.secondary)
@@ -173,6 +170,16 @@ struct VersionDetailView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
+    }
+
+    @ViewBuilder
+    private var versionDates: some View {
+        if let start = version.startDay {
+            Label("Start \(start.formatted(date: .abbreviated, time: .omitted))", systemImage: "calendar")
+        }
+        if let release = version.releaseDay {
+            Label("Release \(release.formatted(date: .abbreviated, time: .omitted))", systemImage: "flag.checkered")
+        }
     }
 
     @ViewBuilder
@@ -224,6 +231,8 @@ struct VersionDetailView: View {
             let cloudId = try await session.cloudId()
             let found = try await client.versionHighlights(projectId: route.project.id, cloudId: cloudId, search: version.name)
             highlights = found[version.id]
+        } catch where error.isCancellation {
+            // Loads again when the page reappears.
         } catch {
             if highlights == nil {
                 highlightsError = "Couldn't load version highlights: \(error.localizedDescription)"
@@ -330,6 +339,8 @@ struct VersionDetailView: View {
             do {
                 assignees = try await session.teamMemberIDs(teamNamed: Self.appTeamName)
                 appTeamError = nil
+            } catch where error.isCancellation {
+                return
             } catch {
                 appTeamError = error.localizedDescription
             }

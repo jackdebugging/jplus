@@ -172,7 +172,7 @@ final class CommandPaletteModel {
                 combined.append(PaletteIssue(summary))
             }
         case .failure(let error):
-            if combined.isEmpty { searchError = error.localizedDescription }
+            if combined.isEmpty, !error.isCancellation { searchError = error.localizedDescription }
         }
         issueResults = Array(combined.prefix(Self.issueLimit))
         return issueResults

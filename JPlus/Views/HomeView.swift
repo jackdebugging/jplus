@@ -6,6 +6,7 @@ import SwiftUI
 struct HomeView: View {
     @Environment(SessionStore.self) private var session
     @Environment(\.openAppSettings) private var openSettings
+    @Environment(\.openURL) private var openURL
     let user: JiraUser
 
     enum SidebarItem: Hashable {
@@ -293,7 +294,7 @@ struct HomeView: View {
             Button("Settings…", systemImage: "gearshape") { openSettings() }
             if let client = session.client {
                 Button("Open \(client.credentials.siteHost)", systemImage: "safari") {
-                    openInBrowser(client.credentials.siteURL)
+                    openURL(client.credentials.siteURL)
                 }
             }
             Divider()

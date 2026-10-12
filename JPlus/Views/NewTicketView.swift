@@ -123,8 +123,8 @@ struct NewTicketView: View {
                 setScreenshot(ScreenshotImport.load(url: url), failureMessage: "That file isn't an image the app can read.")
             }
         }
-        .task { await loadProjects() }
-        .task { await loadDefaultTeam() }
+        .loadTask { await loadProjects() }
+        .loadTask { await loadDefaultTeam() }
         .task(id: projectKey) { await loadIssueTypes() }
         .task(id: projectKey) { await loadVersions() }
         .task(id: createScreenKey) { await loadCreateFields() }

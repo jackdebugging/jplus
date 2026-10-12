@@ -102,7 +102,7 @@ struct IssueDetailView: View {
                 }
             }
         }
-        .task { await load() }
+        .loadTask { await load() }
     }
 
     private var subtitle: String {
@@ -149,6 +149,9 @@ struct IssueDetailView: View {
             }
         } catch JiraError.notFound {
             phase = .failed("No issue with key \(key), or you don't have permission to view it.")
+        } catch where error.isCancellation {
+            // Still loading as far as the page is concerned; it loads again when it reappears.
+            return
         } catch {
             phase = .failed(error.localizedDescription)
         }
@@ -259,24 +262,43 @@ private struct IssueContentView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                if let parent = fields.parent {
-                    ParentBreadcrumb(parent: parent, onOpen: onOpenIssue)
-                    Image(systemName: "chevron.right").scaledFont(.caption2).foregroundStyle(.tertiary)
+            // One row where it fits; on an iPhone the parent gets a line of its own.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    parentBreadcrumb
+                    typeKeyAndStatus
                 }
-                IssueTypeBadge(name: fields.issueType.name)
-                    .fixedSize()
-                Text(issue.key)
-                    .scaledFont(.callout.monospaced())
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-                    .fixedSize()
-                Spacer()
-                IssueStatusButton(issue: issue, onChanged: onChanged)
-                    .fixedSize()
+                VStack(alignment: .leading, spacing: 6) {
+                    if let parent = fields.parent {
+                        ParentBreadcrumb(parent: parent, onOpen: onOpenIssue)
+                    }
+                    HStack(spacing: 8) { typeKeyAndStatus }
+                }
             }
             EditableSummary(issue: issue, onChanged: onChanged)
         }
+    }
+
+    @ViewBuilder
+    private var parentBreadcrumb: some View {
+        if let parent = fields.parent {
+            ParentBreadcrumb(parent: parent, onOpen: onOpenIssue)
+            Image(systemName: "chevron.right").scaledFont(.caption2).foregroundStyle(.tertiary)
+        }
+    }
+
+    @ViewBuilder
+    private var typeKeyAndStatus: some View {
+        IssueTypeBadge(name: fields.issueType.name)
+            .fixedSize()
+        Text(issue.key)
+            .scaledFont(.callout.monospaced())
+            .foregroundStyle(.secondary)
+            .textSelection(.enabled)
+            .fixedSize()
+        Spacer()
+        IssueStatusButton(issue: issue, onChanged: onChanged)
+            .fixedSize()
     }
 
     private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {

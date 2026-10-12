@@ -26,7 +26,7 @@ struct MentionsView: View {
                     }
                 }
             }
-            .task { if !model.hasLoaded { await reload() } }
+            .loadTask { if !model.hasLoaded { await reload() } }
     }
 
     @ViewBuilder
@@ -155,15 +155,10 @@ private struct MentionRow: View {
         HStack(alignment: .top, spacing: 10) {
             AvatarView(user: mention.author, size: 28)
             VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 4) {
-                    Text(mention.author?.displayName ?? "Someone").fontWeight(.semibold)
-                    Text(placeText).foregroundStyle(.secondary)
-                    Text(mention.issueKey).scaledFont(.callout.monospaced()).foregroundStyle(.secondary)
-                    Spacer(minLength: 8)
-                    Text(mention.date.formatted(date: .omitted, time: .shortened))
-                        .scaledFont(.caption)
-                        .foregroundStyle(.secondary)
-                        .help(mention.date.formatted(date: .complete, time: .shortened))
+                // The whole sentence where it fits; on an iPhone, who and which issue.
+                ViewThatFits(in: .horizontal) {
+                    headline(place: placeText)
+                    headline(place: nil)
                 }
                 .scaledFont(.callout)
                 .lineLimit(1)
@@ -184,6 +179,24 @@ private struct MentionRow: View {
             }
         }
         .padding(.vertical, 5)
+    }
+
+    private func headline(place: String?) -> some View {
+        HStack(spacing: 4) {
+            Text(mention.author?.displayName ?? "Someone").fontWeight(.semibold)
+                .layoutPriority(1)
+            if let place {
+                Text(place).foregroundStyle(.secondary)
+            }
+            Text(mention.issueKey).scaledFont(.callout.monospaced()).foregroundStyle(.secondary)
+                .fixedSize()
+            Spacer(minLength: 8)
+            Text(mention.date.formatted(date: .omitted, time: .shortened))
+                .scaledFont(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize()
+                .help(mention.date.formatted(date: .complete, time: .shortened))
+        }
     }
 
     private var placeText: String {

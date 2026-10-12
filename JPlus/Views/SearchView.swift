@@ -56,7 +56,7 @@ struct JQLSearchView: View {
                 }
             }
         }
-        .task {
+        .loadTask {
             // An empty saved query would leave the screen blank; start from "assigned to me".
             if jql.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 jql = Preset.assignedToMe.jql
@@ -119,7 +119,7 @@ struct JQLSearchView: View {
             } actions: {
                 Button("Try Again") { Task { await run() } }
             }
-        } else if query.isLoading && query.issues.isEmpty {
+        } else if (query.isLoading || !query.hasRun) && query.issues.isEmpty {
             ProgressView("Searching…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if query.hasRun && query.issues.isEmpty {

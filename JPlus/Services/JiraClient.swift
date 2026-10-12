@@ -29,6 +29,18 @@ enum JiraError: LocalizedError {
     }
 }
 
+extension Error {
+    /// A request stopped because whatever asked for it went away, such as a
+    /// screen sliding off before its data arrived. Not a failure to show:
+    /// the screen loads again when it comes back.
+    var isCancellation: Bool {
+        if self is CancellationError { return true }
+        if (self as? URLError)?.code == .cancelled { return true }
+        if case .network(let underlying)? = self as? JiraError { return underlying.isCancellation }
+        return false
+    }
+}
+
 /// Thin, stateless REST client for Jira Cloud (`/rest/api/3`).
 /// One instance per signed-in account; construct a new one on sign-in.
 struct JiraClient: Sendable {
@@ -36,9 +48,11 @@ struct JiraClient: Sendable {
     private let session: URLSession
     private let decoder: JSONDecoder
 
-    init(credentials: JiraCredentials, session: URLSession = .shared) {
+    /// Without a session, the demo site's requests go to `DemoServer` and
+    /// everyone else's to the network.
+    init(credentials: JiraCredentials, session: URLSession? = nil) {
         self.credentials = credentials
-        self.session = session
+        self.session = session ?? (credentials.isDemo ? DemoSite.urlSession : .shared)
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .custom { decoder in
             let container = try decoder.singleValueContainer()
@@ -742,6 +756,7 @@ struct JiraClient: Sendable {
         do {
             (data, response) = try await session.data(for: request)
         } catch {
+            if error.isCancellation { throw CancellationError() }
             throw JiraError.network(error)
         }
 

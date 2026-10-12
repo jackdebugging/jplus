@@ -41,6 +41,9 @@ struct FuzzySearchView: View {
     @AppStorage("searchProjectKey") private var projectKey = ""
     @AppStorage("searchOpenOnly") private var openOnly = false
     @FocusState private var fieldFocused: Bool
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #endif
 
     private var trimmedQuery: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
 
@@ -84,8 +87,67 @@ struct FuzzySearchView: View {
 
     // MARK: - Header
 
+    @ViewBuilder
     private var header: some View {
+        #if os(iOS)
+        if horizontalSizeClass == .compact {
+            // An iPhone: the field gets the whole width, the filters a row beneath.
+            VStack(alignment: .leading, spacing: 10) {
+                searchField
+                HStack(spacing: 14) {
+                    projectPicker
+                    Toggle("Open only", isOn: $openOnly)
+                        .fixedSize()
+                    Spacer(minLength: 0)
+                    Button("JQL", action: onAdvanced)
+                        .linkButtonStyle()
+                        .accessibilityLabel("Advanced search with JQL")
+                }
+                .scaledFont(.subheadline)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+        } else {
+            wideHeader
+        }
+        #else
+        wideHeader
+        #endif
+    }
+
+    private var wideHeader: some View {
         HStack(spacing: 12) {
+            searchField
+                .frame(maxWidth: 680)
+
+            projectPicker
+
+            Toggle("Open only", isOn: $openOnly)
+                .checkboxToggleStyle()
+
+            Spacer(minLength: 0)
+
+            Button("Advanced (JQL)", action: onAdvanced)
+                .linkButtonStyle()
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+    }
+
+    private var projectPicker: some View {
+        Picker("Project", selection: $projectKey) {
+            Text("All projects").tag("")
+            if !projects.isEmpty { Divider() }
+            ForEach(projects) { project in
+                Text("\(project.key) · \(project.name)").tag(project.key)
+            }
+        }
+        .labelsHidden()
+        .fixedSize()
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 8) {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                 TextField("Search Jira", text: $query, prompt: Text("Search issues in plain words. Typos are fine."))
@@ -110,28 +172,7 @@ struct FuzzySearchView: View {
             .padding(.vertical, 9)
             .background(Capsule().fill(Color.controlBackground))
             .overlay(Capsule().strokeBorder(Color.secondary.opacity(fieldFocused ? 0.5 : 0.25)))
-            .frame(maxWidth: 680)
-
-            Picker("Project", selection: $projectKey) {
-                Text("All projects").tag("")
-                if !projects.isEmpty { Divider() }
-                ForEach(projects) { project in
-                    Text("\(project.key) · \(project.name)").tag(project.key)
-                }
-            }
-            .labelsHidden()
-            .fixedSize()
-
-            Toggle("Open only", isOn: $openOnly)
-                .checkboxToggleStyle()
-
-            Spacer(minLength: 0)
-
-            Button("Advanced (JQL)", action: onAdvanced)
-                .linkButtonStyle()
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 12)
     }
 
     // MARK: - Empty state

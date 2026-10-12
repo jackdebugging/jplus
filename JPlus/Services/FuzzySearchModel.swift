@@ -107,7 +107,7 @@ final class FuzzySearchModel {
         case .success(let details):
             for detail in details { merge(detail, into: &byKey, textMatch: true, tokens: tokens) }
         case .failure(let error):
-            if byKey.isEmpty { errorMessage = error.localizedDescription }
+            if byKey.isEmpty, !error.isCancellation { errorMessage = error.localizedDescription }
         }
         if let exact { merge(exact, into: &byKey, textMatch: false, tokens: tokens) }
 

@@ -86,6 +86,7 @@ struct IssueListView<FilterAccessory: View>: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if isCompact { compactAccessoryRow }
             filterBar
             Divider()
             if isCompact {
@@ -96,11 +97,25 @@ struct IssueListView<FilterAccessory: View>: View {
         }
     }
 
+    /// On an iPhone the accessory controls get a row of their own, scrolling
+    /// sideways if they don't fit, so the filter bar never runs off screen.
+    @ViewBuilder
+    private var compactAccessoryRow: some View {
+        if FilterAccessory.self != EmptyView.self {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 16) { filterAccessory }
+                    .padding(.horizontal, 12)
+                    .padding(.top, 8)
+            }
+            .scaledFont(.subheadline)
+        }
+    }
+
     private var filterBar: some View {
         HStack(spacing: 8) {
             if !filterExpanded && !isCompact { Spacer(minLength: 0) }
 
-            filterAccessory
+            if !isCompact { filterAccessory }
 
             if isCompact && !filterExpanded {
                 sortMenu

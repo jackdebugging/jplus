@@ -60,19 +60,21 @@ because the developer has no access to it.)
 
 ## App Review Information
 
-**Sign-in required:** yes. Provide a demo Jira Cloud site:
+**Sign-in required:** yes. Use the built-in demo; no Jira account is needed.
 
-- User name: the demo account's email
-- Password: an API token for that account (see notes)
+- User name: reviewer@apple.com
+- Password: any text (the demo doesn't check it)
 
 **Notes for the reviewer**
 
-JPlus is a client for Jira Cloud. To sign in, enter:
-• Site: <demo-site>.atlassian.net
-• Email: <demo email>
-• API token: <token> (paste into the "API token" field; Jira Cloud uses API tokens instead of passwords)
+JPlus is a client for Jira Cloud and normally needs a company's Jira site. For review it has a built-in demo with sample data that never leaves the device. On the sign-in screen enter:
+• Site: demo.apple.com
+• Email: reviewer@apple.com
+• API token: leave blank, or type anything
 
-The demo site has sample projects and issues. Draft with Claude is optional and needs the user's own Anthropic API key; it stays disabled without one, and asks for consent before sending anything to Anthropic.
+Either the site or the email alone is enough. You'll be signed in as "App Reviewer" on a sample site with three projects, about 35 issues, releases, @mentions and Daily Priorities. Everything works: open issues, change status, comment and reply, edit fields, search, and create a ticket from a screenshot. Changes last until the app quits. Links that would open the Jira website explain that the demo has no web pages.
+
+Draft with Claude is optional and needs the user's own Anthropic API key; it stays disabled without one, and asks for consent before sending anything to Anthropic.
 
 **Contact:** Sicheng Xu, sichengxu@gmail.com, <phone>
 
@@ -81,5 +83,5 @@ The demo site has sample projects and issues. Draft with Claude is optional and 
 - iPhone 6.9" (1320 × 2868, portrait) — 3 to 10 images
 - iPad 13" (2064 × 2752, portrait) — required because the app supports iPad
 
-Take them from the demo site, never the company site. Suggested set:
+Take them in the built-in demo (sign in with demo.apple.com), never the company site. Suggested set:
 My Issues, an issue page, Search results, Versions, Daily Priorities, New Ticket.

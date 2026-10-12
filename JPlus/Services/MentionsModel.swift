@@ -72,8 +72,10 @@ final class MentionsModel {
         nextPageToken = nil
         canLoadMore = false
         errorMessage = nil
-        await loadPage(accountID: accountID, client: client, generation: generation)
-        hasLoaded = true
+        let myGeneration = generation
+        let finished = await loadPage(accountID: accountID, client: client, generation: myGeneration)
+        // A cancelled load leaves it unloaded, so the screen loads again when it reappears.
+        if finished, myGeneration == generation { hasLoaded = true }
     }
 
     func loadMore(accountID: String, client: JiraClient) async {
@@ -81,7 +83,9 @@ final class MentionsModel {
         await loadPage(accountID: accountID, client: client, generation: generation)
     }
 
-    private func loadPage(accountID: String, client: JiraClient, generation: Int) async {
+    /// False if the load was cancelled before it finished.
+    @discardableResult
+    private func loadPage(accountID: String, client: JiraClient, generation: Int) async -> Bool {
         isLoading = true
         defer { if generation == self.generation { isLoading = false } }
         do {
@@ -98,16 +102,19 @@ final class MentionsModel {
                 }
                 found += Self.mentions(in: issue, comments: comments, accountID: accountID)
             }
-            guard generation == self.generation else { return }
+            guard generation == self.generation else { return true }
             var byID = Dictionary(mentions.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             for mention in found { byID[mention.id] = mention }
             mentions = byID.values.sorted { $0.date > $1.date }
             nextPageToken = page.nextPageToken
             canLoadMore = page.nextPageToken != nil && page.isLast != true
+        } catch where error.isCancellation {
+            return false
         } catch {
-            guard generation == self.generation else { return }
+            guard generation == self.generation else { return true }
             errorMessage = error.localizedDescription
         }
+        return true
     }
 
     // MARK: - Extraction

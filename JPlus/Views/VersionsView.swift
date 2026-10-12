@@ -46,11 +46,11 @@ struct VersionsView: View {
                 .disabled(projectKey.isEmpty)
             }
         }
-        .task {
+        .loadTask {
             await loadProjects()
             if projectKey.isEmpty && !projects.isEmpty { isChoosingProject = true }
         }
-        .task(id: projectKey) { await loadVersions() }
+        .loadTask(id: projectKey) { await loadVersions() }
         .sheet(isPresented: $isChoosingProject) {
             ProjectChooser(projects: projects) { projectKey = $0.key }
         }
@@ -110,6 +110,9 @@ struct VersionsView: View {
             } actions: {
                 Button("Try Again") { Task { await loadVersions() } }
             }
+        } else if projectKey.isEmpty && isLoadingProjects {
+            ProgressView("Loading projects…")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if projectKey.isEmpty {
             ScaledContentUnavailableView {
                 Label("Choose a Project", systemImage: "shippingbox")
@@ -167,7 +170,9 @@ struct VersionsView: View {
     private func loadProjects() async {
         guard let client = session.client else { return }
         isLoadingProjects = true
-        defer { isLoadingProjects = false }
+        var cancelled = false
+        // Cancelled, it's still loading as far as the screen is concerned.
+        defer { if !cancelled { isLoadingProjects = false } }
         do {
             projects = try await client.projects()
             if project == nil {
@@ -179,6 +184,8 @@ struct VersionsView: View {
                     projectKey = ""
                 }
             }
+        } catch where error.isCancellation {
+            cancelled = true
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -189,12 +196,20 @@ struct VersionsView: View {
             versions = []
             return
         }
+        let key = projectKey
         isLoadingVersions = true
         errorMessage = nil
-        defer { isLoadingVersions = false }
+        var cancelled = false
+        // A load for a project no longer picked leaves the newer one's state alone.
+        defer { if !cancelled, key == projectKey { isLoadingVersions = false } }
         do {
-            versions = try await client.versions(projectKey: projectKey)
+            let found = try await client.versions(projectKey: key)
+            guard key == projectKey else { return }
+            versions = found
+        } catch where error.isCancellation {
+            cancelled = true
         } catch {
+            guard key == projectKey else { return }
             errorMessage = error.localizedDescription
         }
     }

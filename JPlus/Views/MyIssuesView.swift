@@ -26,7 +26,7 @@ struct MyIssuesView: View {
                     }
                 }
             }
-            .task { if !query.hasRun { await run() } }
+            .loadTask { if !query.hasRun { await run() } }
     }
 
     @ViewBuilder
@@ -39,7 +39,7 @@ struct MyIssuesView: View {
             } actions: {
                 Button("Try Again") { Task { await run() } }
             }
-        } else if query.isLoading && query.issues.isEmpty {
+        } else if (query.isLoading || !query.hasRun) && query.issues.isEmpty {
             ProgressView("Loading your issues…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if query.hasRun && query.issues.isEmpty {

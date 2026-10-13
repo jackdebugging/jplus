@@ -328,6 +328,16 @@ struct PrioritiesView: View {
                 .focused($isAddFieldFocused)
                 .onSubmit { add(to: day) }
                 .submitLabel(.done)
+                // A vertical field's Return key (the checkmark) types a line
+                // break instead of submitting, so a line break adds the entry.
+                .onChange(of: newText) {
+                    guard newText.contains(where: \.isNewline) else { return }
+                    newText = newText.split(whereSeparator: \.isNewline)
+                        .map { $0.trimmingCharacters(in: .whitespaces) }
+                        .filter { !$0.isEmpty }
+                        .joined(separator: " ")
+                    add(to: day)
+                }
         }
         .padding(.vertical, 10)
     }

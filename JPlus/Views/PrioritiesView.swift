@@ -48,6 +48,10 @@ struct PrioritiesView: View {
     @State private var newDayDate = Date()
     @State private var copiesOpenItems = false
     @FocusState private var isAddFieldFocused: Bool
+    #if os(iOS)
+    @State private var addFieldHeight: CGFloat = 0
+    private static let addFieldID = "addField"
+    #endif
 
     private var folderID: String? { PriorityNaming.folderID(from: folderInput) }
 
@@ -188,42 +192,52 @@ struct PrioritiesView: View {
     // MARK: - Days
 
     private var days: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 28) {
-                if let message = model.errorMessage {
-                    Label(message, systemImage: "exclamationmark.triangle")
-                        .scaledFont(.callout)
-                        .foregroundStyle(.orange)
-                        .textSelection(.enabled)
-                }
-                if model.todayRef == nil {
-                    HStack(spacing: 8) {
-                        Image(systemName: "sun.max").foregroundStyle(.secondary)
-                        Text("There's no page for today yet.").foregroundStyle(.secondary)
-                        Button("Start Today") {
-                            Task { await model.createDay(Date()) }
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 28) {
+                    if let message = model.errorMessage {
+                        Label(message, systemImage: "exclamationmark.triangle")
+                            .scaledFont(.callout)
+                            .foregroundStyle(.orange)
+                            .textSelection(.enabled)
+                    }
+                    if model.todayRef == nil {
+                        HStack(spacing: 8) {
+                            Image(systemName: "sun.max").foregroundStyle(.secondary)
+                            Text("There's no page for today yet.").foregroundStyle(.secondary)
+                            Button("Start Today") {
+                                Task { await model.createDay(Date()) }
+                            }
+                            .disabled(model.isCreatingDay)
                         }
-                        .disabled(model.isCreatingDay)
+                        .scaledFont(.callout)
                     }
-                    .scaledFont(.callout)
-                }
-                ForEach(model.shownDays) { day in
-                    daySection(day, isSelected: day.pageID == model.selectedID)
-                }
-                if let loading = model.shownIDs.first(where: model.loadingPageIDs.contains),
-                   let ref = model.index.first(where: { $0.pageID == loading }) {
-                    HStack(spacing: 6) {
-                        ProgressView().controlSize(.small)
-                        Text("Loading \(ref.title)…").foregroundStyle(.secondary)
+                    ForEach(model.shownDays) { day in
+                        daySection(day, isSelected: day.pageID == model.selectedID)
                     }
-                    .scaledFont(.callout)
+                    if let loading = model.shownIDs.first(where: model.loadingPageIDs.contains),
+                       let ref = model.index.first(where: { $0.pageID == loading }) {
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.small)
+                            Text("Loading \(ref.title)…").foregroundStyle(.secondary)
+                        }
+                        .scaledFont(.callout)
+                    }
+                    previousDayButton
                 }
-                previousDayButton
+                .frame(maxWidth: 820, alignment: .leading)
+                .padding(24)
             }
-            .frame(maxWidth: 820, alignment: .leading)
-            .padding(24)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            #if os(iOS)
+            // The keyboard doesn't make room as a new priority grows a line, so
+            // keep the field's last line in view.
+            .onChange(of: addFieldHeight) { old, new in
+                guard isAddFieldFocused, new > old else { return }
+                withAnimation { proxy.scrollTo(Self.addFieldID, anchor: .bottom) }
+            }
+            #endif
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
@@ -323,13 +337,24 @@ struct PrioritiesView: View {
                 .scaledFont(.title3)
                 .foregroundStyle(Color.accentColor)
                 .frame(width: PriorityItemRow.checkWidth)
+            // Return types a line break; the checkmark in the navigation bar adds it.
             TextField("New Priority", text: $newText, axis: .vertical)
                 .lineLimit(1...4)
                 .focused($isAddFieldFocused)
-                .onSubmit { add(to: day) }
-                .submitLabel(.done)
         }
         .padding(.vertical, 10)
+        .id(Self.addFieldID)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { addFieldHeight = $0 }
+        .toolbar {
+            if isAddFieldFocused {
+                ToolbarItem(placement: .confirmationAction) {
+                    DoneEditingButton {
+                        add(to: day, refocus: false)
+                        isAddFieldFocused = false
+                    }
+                }
+            }
+        }
     }
     #else
     private static let rowSpacing: CGFloat = 6
@@ -373,13 +398,14 @@ struct PrioritiesView: View {
     }
     #endif
 
-    private func add(to day: PriorityDay) {
+    /// `refocus` puts the cursor back in the field for the next entry.
+    private func add(to day: PriorityDay, refocus: Bool = true) {
         let text = newText
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         newText = ""
         Task {
             await model.add(text, to: day)
-            isAddFieldFocused = true
+            if refocus { isAddFieldFocused = true }
         }
     }
 
@@ -528,8 +554,9 @@ private struct PriorityDayList: View {
     }
 }
 
-/// One checkbox line. Double-click (or Edit… in the menu) to change its text.
-/// On iOS it looks like a reminder: a round check, and a hairline beneath.
+/// One checkbox line. On the Mac, the pencil shown on hover (or Edit… in the
+/// menu) changes its text; on iOS, a double tap does. On iOS it looks like a
+/// reminder: a round check, and a hairline beneath.
 private struct PriorityItemRow: View {
     let item: PriorityItem
     let day: PriorityDay
@@ -543,6 +570,9 @@ private struct PriorityItemRow: View {
     @FocusState private var isFocused: Bool
     @Environment(\.textSizeScale) private var textScale
     @Environment(\.appFont) private var appFont
+    #if os(macOS)
+    @State private var isHovered = false
+    #endif
 
     #if os(iOS)
     private static let openSymbol = "circle"
@@ -580,19 +610,42 @@ private struct PriorityItemRow: View {
                     .onSubmit(commitEdit)
                     .onEscape { isEditing = false }
                     .onChange(of: isFocused) { if !isFocused { commitEdit() } }
+                    #if os(iOS)
+                    // Return types a line break; the checkmark saves.
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            DoneEditingButton(action: commitEdit)
+                        }
+                    }
+                    #endif
             } else {
-                Text(ADFInline.attributedString(item.content, textScale: textScale, font: appFont))
-                    .strikethrough(item.isDone && Self.strikesDone)
-                    .foregroundStyle(item.isDone ? .secondary : .primary)
-                    .textSelection(.enabled)
+                #if os(macOS)
+                // Read only: the pencil, shown on hover, edits.
+                itemText
+                Button("Edit", systemImage: "pencil", action: beginEdit)
+                    .labelStyle(.iconOnly)
+                    .imageScale(.small)
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.secondary)
+                    .opacity(isHovered ? 1 : 0)
+                    .disabled(isBusy)
+                    .help("Edit priority")
+                Spacer(minLength: 0)
+                #else
+                itemText
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
                     .onTapGesture(count: 2, perform: beginEdit)
+                #endif
             }
             if isBusy {
                 ProgressView().controlSize(.mini)
             }
         }
+        #if os(macOS)
+        .contentShape(Rectangle())
+        .onHover { isHovered = $0 }
+        #endif
         .contextMenu {
             Button("Edit…", systemImage: "pencil", action: beginEdit)
             Button(item.isDone ? "Mark Not Done" : "Mark Done", systemImage: item.isDone ? Self.openSymbol : Self.doneSymbol) {
@@ -611,6 +664,13 @@ private struct PriorityItemRow: View {
                 model.remove(item, from: day)
             }
         }
+    }
+
+    private var itemText: some View {
+        Text(ADFInline.attributedString(item.content, textScale: textScale, font: appFont))
+            .strikethrough(item.isDone && Self.strikesDone)
+            .foregroundStyle(item.isDone ? .secondary : .primary)
+            .textSelection(.enabled)
     }
 
     #if os(iOS)
@@ -665,3 +725,20 @@ private struct PriorityItemRow: View {
         }
     }
 }
+
+#if os(iOS)
+/// The checkmark Reminders shows in the navigation bar while you type: it
+/// saves, which leaves the keyboard's Return key for line breaks.
+private struct DoneEditingButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        if #available(iOS 26, *) {
+            Button(role: .confirm, action: action)
+        } else {
+            Button("Done", action: action)
+                .fontWeight(.semibold)
+        }
+    }
+}
+#endif

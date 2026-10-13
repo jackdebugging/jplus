@@ -164,8 +164,18 @@ nonisolated extension ADFNode {
     }
 
     /// Typed text as inline nodes: issue keys become cards that open in the
-    /// app, web links become links, the rest stays text.
+    /// app, web links become links, line breaks become hard breaks, the rest
+    /// stays text.
     static func inlineContent(from text: String, siteURL: URL) -> [ADFNode] {
+        var nodes: [ADFNode] = []
+        for (index, line) in text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline).enumerated() {
+            if index > 0 { nodes.append(ADFNode(type: "hardBreak")) }
+            nodes += lineContent(from: String(line), siteURL: siteURL)
+        }
+        return nodes
+    }
+
+    private static func lineContent(from text: String, siteURL: URL) -> [ADFNode] {
         var nodes: [ADFNode] = []
         var plain = ""
         func flush() {

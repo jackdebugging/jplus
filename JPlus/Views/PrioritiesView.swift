@@ -675,6 +675,8 @@ private struct PriorityItemRow: View {
                 text
                 if !threads.isEmpty {
                     PriorityComments(threads: threads, model: model)
+                        // Faded with a finished item, as its text is.
+                        .opacity(item.isDone ? 0.5 : 1)
                 }
             }
             if isBusy {

@@ -554,9 +554,8 @@ private struct PriorityDayList: View {
     }
 }
 
-/// One checkbox line. On the Mac, the pencil shown on hover (or Edit… in the
-/// menu) changes its text; on iOS, a double tap does. On iOS it looks like a
-/// reminder: a round check, and a hairline beneath.
+/// One checkbox line. Double-click (or Edit… in the menu) to change its text.
+/// On iOS it looks like a reminder: a round check, and a hairline beneath.
 private struct PriorityItemRow: View {
     let item: PriorityItem
     let day: PriorityDay
@@ -571,7 +570,9 @@ private struct PriorityItemRow: View {
     @Environment(\.textSizeScale) private var textScale
     @Environment(\.appFont) private var appFont
     #if os(macOS)
-    @State private var isHovered = false
+    @Environment(\.openURL) private var openURL
+    /// The current click landed on a link, so it opens that instead of editing.
+    @State private var clickedLink = false
     #endif
 
     #if os(iOS)
@@ -619,33 +620,35 @@ private struct PriorityItemRow: View {
                     }
                     #endif
             } else {
-                #if os(macOS)
-                // Read only: the pencil, shown on hover, edits.
-                itemText
-                Button("Edit", systemImage: "pencil", action: beginEdit)
-                    .labelStyle(.iconOnly)
-                    .imageScale(.small)
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(.secondary)
-                    .opacity(isHovered ? 1 : 0)
-                    .disabled(isBusy)
-                    .help("Edit priority")
-                Spacer(minLength: 0)
-                #else
-                itemText
+                Text(ADFInline.attributedString(item.content, textScale: textScale, font: appFont))
+                    .strikethrough(item.isDone && Self.strikesDone)
+                    .foregroundStyle(item.isDone ? .secondary : .primary)
+                    .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
+                    #if os(macOS)
+                    // One click edits, as in Reminders. It runs alongside link
+                    // handling so links still open, and a link click doesn't edit.
+                    .environment(\.openURL, OpenURLAction { url in
+                        clickedLink = true
+                        openURL(url)
+                        return .handled
+                    })
+                    .simultaneousGesture(TapGesture().onEnded {
+                        // A link opens during the same click; look once it has.
+                        DispatchQueue.main.async {
+                            if !clickedLink { beginEdit() }
+                            clickedLink = false
+                        }
+                    })
+                    #else
                     .onTapGesture(count: 2, perform: beginEdit)
-                #endif
+                    #endif
             }
             if isBusy {
                 ProgressView().controlSize(.mini)
             }
         }
-        #if os(macOS)
-        .contentShape(Rectangle())
-        .onHover { isHovered = $0 }
-        #endif
         .contextMenu {
             Button("Edit…", systemImage: "pencil", action: beginEdit)
             Button(item.isDone ? "Mark Not Done" : "Mark Done", systemImage: item.isDone ? Self.openSymbol : Self.doneSymbol) {
@@ -664,13 +667,6 @@ private struct PriorityItemRow: View {
                 model.remove(item, from: day)
             }
         }
-    }
-
-    private var itemText: some View {
-        Text(ADFInline.attributedString(item.content, textScale: textScale, font: appFont))
-            .strikethrough(item.isDone && Self.strikesDone)
-            .foregroundStyle(item.isDone ? .secondary : .primary)
-            .textSelection(.enabled)
     }
 
     #if os(iOS)

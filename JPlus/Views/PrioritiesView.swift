@@ -48,6 +48,10 @@ struct PrioritiesView: View {
     @State private var newDayDate = Date()
     @State private var copiesOpenItems = false
     @FocusState private var isAddFieldFocused: Bool
+    /// Where a new priority is being typed: under the one Return was pressed in.
+    @State private var newItemSpot: NewItemSpot?
+    /// The item swiped open to show its actions, on iOS.
+    @State private var swipedOpenID: String?
     #if os(iOS)
     @State private var addFieldHeight: CGFloat = 0
     private static let addFieldID = "addField"
@@ -236,6 +240,10 @@ struct PrioritiesView: View {
                 guard isAddFieldFocused, new > old else { return }
                 withAnimation { proxy.scrollTo(Self.addFieldID, anchor: .bottom) }
             }
+            // Scrolling closes a row swiped open, as in Mail.
+            .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, _ in
+                if swipedOpenID != nil { swipedOpenID = nil }
+            }
             #endif
         }
     }
@@ -268,13 +276,29 @@ struct PrioritiesView: View {
             } else {
                 VStack(alignment: .leading, spacing: Self.rowSpacing) {
                     ForEach(day.items) { item in
+                        let spot = NewItemSpot(pageID: day.pageID, afterID: item.id)
                         PriorityItemRow(
                             item: item,
                             day: day,
                             canMoveToToday: model.todayRef.map { $0.pageID != day.pageID } ?? false,
                             isBusy: model.busyItemIDs.contains(item.id),
-                            model: model
+                            model: model,
+                            swipedOpenID: $swipedOpenID,
+                            onReturn: { newItemSpot = spot }
                         )
+                        if newItemSpot == spot {
+                            NewPriorityRow { text in
+                                // The next one starts under the one just added.
+                                newItemSpot = model.add(text, to: day, after: item.id)
+                                    .map { NewItemSpot(pageID: day.pageID, afterID: $0) }
+                            } onEnd: { text in
+                                #if os(iOS)
+                                // On iOS, as in Reminders there, leaving it keeps what was typed.
+                                model.add(text, to: day, after: item.id)
+                                #endif
+                                if newItemSpot == spot { newItemSpot = nil }
+                            }
+                        }
                     }
                 }
             }
@@ -337,10 +361,16 @@ struct PrioritiesView: View {
                 .scaledFont(.title3)
                 .foregroundStyle(Color.accentColor)
                 .frame(width: PriorityItemRow.checkWidth)
-            // Return types a line break; the checkmark in the navigation bar adds it.
+            // Return adds it and stays for the next; the checkmark in the
+            // navigation bar adds it and closes the keyboard.
             TextField("New Priority", text: $newText, axis: .vertical)
                 .lineLimit(1...4)
                 .focused($isAddFieldFocused)
+                .onChange(of: newText) { old, new in
+                    guard isReturnKeystroke(from: old, to: new) else { return }
+                    newText = old
+                    add(to: day)
+                }
         }
         .padding(.vertical, 10)
         .id(Self.addFieldID)
@@ -400,13 +430,9 @@ struct PrioritiesView: View {
 
     /// `refocus` puts the cursor back in the field for the next entry.
     private func add(to day: PriorityDay, refocus: Bool = true) {
-        let text = newText
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        guard model.add(newText, to: day) != nil else { return }
         newText = ""
-        Task {
-            await model.add(text, to: day)
-            if refocus { isAddFieldFocused = true }
-        }
+        if refocus { isAddFieldFocused = true }
     }
 
     // MARK: - New day
@@ -501,6 +527,11 @@ struct PrioritiesView: View {
     }
 }
 
+private struct NewItemSpot: Equatable {
+    let pageID: String
+    let afterID: String
+}
+
 /// Every day under the folder, newest first and grouped by month, shown
 /// on the right. Picking one shows it on its own in the main pane.
 private struct PriorityDayList: View {
@@ -554,8 +585,11 @@ private struct PriorityDayList: View {
     }
 }
 
-/// One checkbox line. Double-click (or Edit… in the menu) to change its text.
-/// On iOS it looks like a reminder: a round check, and a hairline beneath.
+/// One checkbox line, edited as in Reminders: a click or tap edits it (one
+/// on a link opens the link), the change saves when you're done, and Return
+/// saves it and starts a new priority below. On the Mac the caret goes where
+/// the click landed. On iOS it looks like a reminder (a round check, and a
+/// hairline beneath), and swiping it left shows Edit and Delete.
 private struct PriorityItemRow: View {
     let item: PriorityItem
     let day: PriorityDay
@@ -563,16 +597,22 @@ private struct PriorityItemRow: View {
     let canMoveToToday: Bool
     let isBusy: Bool
     let model: PrioritiesModel
+    /// The item swiped open to show its actions (iOS); one at a time.
+    @Binding var swipedOpenID: String?
+    /// Return was pressed in an edit: start a new priority below.
+    let onReturn: () -> Void
 
     @State private var isEditing = false
     @State private var draft = ""
     @FocusState private var isFocused: Bool
     @Environment(\.textSizeScale) private var textScale
     @Environment(\.appFont) private var appFont
-    #if os(macOS)
     @Environment(\.openURL) private var openURL
     /// The current click landed on a link, so it opens that instead of editing.
     @State private var clickedLink = false
+    #if os(macOS)
+    /// Where in the text the click that started editing landed, for the caret.
+    @State private var editClick: CGPoint?
     #endif
 
     #if os(iOS)
@@ -594,6 +634,17 @@ private struct PriorityItemRow: View {
             Divider()
                 .padding(.leading, Self.checkWidth + 12)
         }
+        .modifier(SwipeToRevealActions(
+            isOpen: Binding(
+                get: { swipedOpenID == item.id },
+                set: { open in
+                    if open { swipedOpenID = item.id } else if swipedOpenID == item.id { swipedOpenID = nil }
+                }
+            ),
+            isEnabled: !isEditing,
+            onEdit: beginEdit,
+            onDelete: { model.remove(item, from: day) }
+        ))
         #else
         line
         #endif
@@ -608,25 +659,34 @@ private struct PriorityItemRow: View {
                     .textFieldStyle(.plain)
                     .lineLimit(1...6)
                     .focused($isFocused)
-                    .onSubmit(commitEdit)
+                    #if os(macOS)
+                    .onSubmit(submitEdit)
+                    // There's nothing to cancel: what's typed is kept, as in Reminders.
+                    .onEscape(perform: commitEdit)
+                    .onChange(of: isFocused) { if isFocused { placeCaret() } else { commitEdit() } }
+                    .endsEditingOnClickOutside(isFocused: isFocused, text: draft)
+                    #else
+                    .onChange(of: draft) { old, new in
+                        guard isReturnKeystroke(from: old, to: new) else { return }
+                        draft = old
+                        submitEdit()
+                    }
                     .onEscape { isEditing = false }
                     .onChange(of: isFocused) { if !isFocused { commitEdit() } }
-                    #if os(iOS)
-                    // Return types a line break; the checkmark saves.
+                    // Return starts a new priority below; the checkmark saves.
                     .toolbar {
                         ToolbarItem(placement: .confirmationAction) {
                             DoneEditingButton(action: commitEdit)
                         }
                     }
                     #endif
+                    .onDisappear(perform: commitEdit)
             } else {
                 Text(ADFInline.attributedString(item.content, textScale: textScale, font: appFont))
                     .strikethrough(item.isDone && Self.strikesDone)
                     .foregroundStyle(item.isDone ? .secondary : .primary)
-                    .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
-                    #if os(macOS)
                     // One click edits, as in Reminders. It runs alongside link
                     // handling so links still open, and a link click doesn't edit.
                     .environment(\.openURL, OpenURLAction { url in
@@ -634,22 +694,25 @@ private struct PriorityItemRow: View {
                         openURL(url)
                         return .handled
                     })
-                    .simultaneousGesture(TapGesture().onEnded {
+                    .simultaneousGesture(SpatialTapGesture().onEnded { tap in
                         // A link opens during the same click; look once it has.
                         DispatchQueue.main.async {
-                            if !clickedLink { beginEdit() }
+                            if !clickedLink { tapped(at: tap.location) }
                             clickedLink = false
                         }
                     })
-                    #else
-                    .onTapGesture(count: 2, perform: beginEdit)
-                    #endif
             }
             if isBusy {
                 ProgressView().controlSize(.mini)
             }
         }
         .contextMenu {
+            #if os(macOS)
+            Button("Edit", systemImage: "pencil", action: beginEdit)
+            Button("Delete", systemImage: "trash", role: .destructive) {
+                model.remove(item, from: day)
+            }
+            #else
             Button("Edit…", systemImage: "pencil", action: beginEdit)
             Button(item.isDone ? "Mark Not Done" : "Mark Done", systemImage: item.isDone ? Self.openSymbol : Self.doneSymbol) {
                 model.setDone(!item.isDone, item: item, in: day)
@@ -666,11 +729,12 @@ private struct PriorityItemRow: View {
             Button("Delete", systemImage: "trash", role: .destructive) {
                 model.remove(item, from: day)
             }
+            #endif
         }
     }
 
     #if os(iOS)
-    private static let lineSpacing: CGFloat = 12
+    static let lineSpacing: CGFloat = 12
     /// Reminders greys finished items without striking them through.
     private static let strikesDone = false
 
@@ -692,7 +756,7 @@ private struct PriorityItemRow: View {
         .accessibilityAddTraits(.isToggle)
     }
     #else
-    private static let lineSpacing: CGFloat = 8
+    static let lineSpacing: CGFloat = 8
     private static let strikesDone = true
 
     private var check: some View {
@@ -713,6 +777,47 @@ private struct PriorityItemRow: View {
         isFocused = true
     }
 
+    private func tapped(at location: CGPoint) {
+        #if os(macOS)
+        editClick = location
+        beginEdit()
+        #else
+        // A tap while a row is swiped open only closes it, as in Mail.
+        if swipedOpenID != nil {
+            swipedOpenID = nil
+        } else {
+            beginEdit()
+        }
+        #endif
+    }
+
+    /// Return: save, and start a new priority below unless it was emptied.
+    private func submitEdit() {
+        let isBlank = draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        commitEdit()
+        if !isBlank { onReturn() }
+    }
+
+    #if os(macOS)
+    /// Puts the caret where the click that started editing landed, or at the
+    /// end, instead of selecting everything as a text field does on focus.
+    private func placeCaret() {
+        let click = editClick
+        editClick = nil
+        whenEditing(draft) { window, editor in
+            var index = (editor.string as NSString).length
+            if let click {
+                // The click was measured from the text's top-left corner; find
+                // that corner in the field, which shows the same text.
+                let start = window.convertFromScreen(editor.firstRect(forCharacterRange: NSRange(location: 0, length: 0), actualRange: nil))
+                let point = NSPoint(x: start.minX + click.x, y: start.maxY - click.y)
+                index = editor.characterIndexForInsertion(at: editor.convert(point, from: nil))
+            }
+            editor.setSelectedRange(NSRange(location: index, length: 0))
+        }
+    }
+    #endif
+
     private func commitEdit() {
         guard isEditing else { return }
         isEditing = false
@@ -722,7 +827,278 @@ private struct PriorityItemRow: View {
     }
 }
 
+#if os(macOS)
+/// Calls `body` once the field showing `text` is being edited. A newly
+/// focused field gets the field editor a turn or two of the run loop later,
+/// more while rows around it come and go.
+private func whenEditing(_ text: String, tries: Int = 5, _ body: @escaping (NSWindow, NSTextView) -> Void) {
+    DispatchQueue.main.async {
+        if let window = NSApp.keyWindow, let editor = window.firstResponder as? NSTextView, editor.string == text {
+            window.layoutIfNeeded()
+            body(window, editor)
+        } else if tries > 0 {
+            whenEditing(text, tries: tries - 1, body)
+        }
+    }
+}
+
+private extension View {
+    /// While the field is focused, a click anywhere else in the app ends its
+    /// edit, as in Reminders; the click still does what it would. `text` is
+    /// what the field shows, to know it once it's being edited.
+    func endsEditingOnClickOutside(isFocused: Bool, text: String) -> some View {
+        modifier(EndsEditingOnClickOutside(isFocused: isFocused, text: text))
+    }
+}
+
+private struct EndsEditingOnClickOutside: ViewModifier {
+    let isFocused: Bool
+    let text: String
+
+    @State private var monitor: Any?
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: isFocused, initial: true) { if isFocused { start() } else { stop() } }
+            .onDisappear(perform: stop)
+    }
+
+    private func start() {
+        whenEditing(text) { _, editor in
+            guard monitor == nil else { return }
+            let field = editor.delegate as? NSView ?? editor
+            monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak field] event in
+                // Only while this field is still the one being edited.
+                guard let field, let window = field.window,
+                      let editor = window.firstResponder as? NSTextView,
+                      (editor.delegate as? NSView ?? editor) === field else { return event }
+                if event.window === window, field.bounds.contains(field.convert(event.locationInWindow, from: nil)) {
+                    return event
+                }
+                window.makeFirstResponder(nil)
+                return event
+            }
+        }
+    }
+
+    private func stop() {
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
+    }
+}
+
+#endif
+
+/// A priority being typed under another, as after Return in Reminders.
+/// Return adds it and starts the next one below; blank text isn't added. On
+/// the Mac, Esc or a click elsewhere drops it unsaved; on iOS, leaving it
+/// keeps what was typed, as Reminders does there.
+private struct NewPriorityRow: View {
+    /// Return was pressed with this text.
+    let onSubmit: (String) -> Void
+    /// The row was left with this text in it.
+    let onEnd: (String) -> Void
+
+    @State private var text = ""
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        #if os(iOS)
+        VStack(alignment: .leading, spacing: 0) {
+            line
+                .padding(.vertical, 10)
+            Divider()
+                .padding(.leading, PriorityItemRow.checkWidth + 12)
+        }
+        #else
+        line
+        #endif
+    }
+
+    private var line: some View {
+        HStack(alignment: Self.alignment, spacing: PriorityItemRow.lineSpacing) {
+            #if os(iOS)
+            Image(systemName: "circle")
+                .scaledFont(.title3.weight(.light))
+                .foregroundStyle(Color.secondary.opacity(0.6))
+                .frame(width: PriorityItemRow.checkWidth)
+            #else
+            Toggle("", isOn: .constant(false))
+                .checkboxToggleStyle()
+                .labelsHidden()
+                .disabled(true)
+            #endif
+            TextField("New Priority", text: $text, axis: .vertical)
+                .textFieldStyle(.plain)
+                .lineLimit(1...6)
+                .focused($isFocused)
+                #if os(macOS)
+                .onSubmit(submit)
+                .endsEditingOnClickOutside(isFocused: isFocused, text: text)
+                #else
+                .onChange(of: text) { old, new in
+                    guard isReturnKeystroke(from: old, to: new) else { return }
+                    text = old
+                    submit()
+                }
+                .toolbar {
+                    if isFocused {
+                        ToolbarItem(placement: .confirmationAction) {
+                            DoneEditingButton { isFocused = false }
+                        }
+                    }
+                }
+                #endif
+                .onEscape(perform: end)
+                .onChange(of: isFocused) { if !isFocused { end() } }
+        }
+        // After the Return that made this row has finished with the field it came from.
+        .onAppear { DispatchQueue.main.async { isFocused = true } }
+    }
+
+    #if os(iOS)
+    /// As in the add row: an empty multi-line field has no first baseline
+    /// here, so lining up on it drops the field a line.
+    private static let alignment = VerticalAlignment.center
+    #else
+    private static let alignment = VerticalAlignment.firstTextBaseline
+    #endif
+
+    // Each empties the field first, so the focus change that follows doesn't
+    // hand the same text on again.
+    private func submit() {
+        let value = text
+        text = ""
+        onSubmit(value)
+    }
+
+    private func end() {
+        let value = text
+        text = ""
+        onEnd(value)
+    }
+}
+
+
 #if os(iOS)
+/// Whether an edit is the Return key: one character more, and it's a line
+/// break. (Return types one into a multi-line field instead of submitting.)
+private func isReturnKeystroke(from old: String, to new: String) -> Bool {
+    new.count == old.count + 1 && new.filter(\.isNewline).count == old.filter(\.isNewline).count + 1
+}
+
+/// Swiping a row left reveals Edit and Delete behind it, as in Mail; a swipe
+/// back, a tap, scrolling or opening another row closes it.
+private struct SwipeToRevealActions: ViewModifier {
+    @Binding var isOpen: Bool
+    /// Off while the row is being edited, so drags select text.
+    let isEnabled: Bool
+    let onEdit: () -> Void
+    let onDelete: () -> Void
+
+    @State private var offset: CGFloat = 0
+    @State private var startOffset: CGFloat = 0
+    private static let buttonWidth: CGFloat = 74
+    private static let openOffset = -2 * buttonWidth
+
+    func body(content: Content) -> some View {
+        content
+            .offset(x: offset)
+            .background(alignment: .trailing) {
+                HStack(spacing: 0) {
+                    button("Edit", tint: .green, action: onEdit)
+                    button("Delete", tint: .red, action: onDelete)
+                }
+                .frame(width: max(0, -offset))
+                .clipped()
+            }
+            .gesture(SidewaysPan(isEnabled: isEnabled, allowsRightward: isOpen) {
+                startOffset = offset
+                isOpen = true
+            } onChanged: { translation in
+                let target = startOffset + translation
+                // Past fully open it stretches, with resistance.
+                offset = target < Self.openOffset ? Self.openOffset + (target - Self.openOffset) / 3 : min(0, target)
+            } onEnded: { translation, velocity in
+                let target = startOffset + translation
+                settle(open: velocity < -300 || (velocity < 300 && target < Self.openOffset / 2))
+            })
+            .onChange(of: isOpen) { if !isOpen { settle(open: false) } }
+            .onChange(of: isEnabled) { if !isEnabled { isOpen = false } }
+    }
+
+    private func button(_ title: String, tint: Color, action: @escaping () -> Void) -> some View {
+        Button {
+            isOpen = false
+            action()
+        } label: {
+            // The color takes its share of what's revealed; the title keeps its size.
+            tint
+                .overlay {
+                    Text(title)
+                        .scaledFont(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .fixedSize()
+                }
+                .clipped()
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func settle(open: Bool) {
+        withAnimation(.snappy) { offset = open ? Self.openOffset : 0 }
+        if isOpen != open { isOpen = open }
+    }
+}
+
+/// A pan that starts only when the finger moves sideways, so the page still
+/// scrolls under it; leftward only, unless the row is open.
+private struct SidewaysPan: UIGestureRecognizerRepresentable {
+    let isEnabled: Bool
+    let allowsRightward: Bool
+    let onBegan: () -> Void
+    let onChanged: (_ translation: CGFloat) -> Void
+    let onEnded: (_ translation: CGFloat, _ velocity: CGFloat) -> Void
+
+    func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator { Coordinator() }
+
+    func makeUIGestureRecognizer(context: Context) -> UIPanGestureRecognizer {
+        let pan = UIPanGestureRecognizer()
+        pan.delegate = context.coordinator
+        return pan
+    }
+
+    func updateUIGestureRecognizer(_ recognizer: UIPanGestureRecognizer, context: Context) {
+        recognizer.isEnabled = isEnabled
+        context.coordinator.allowsRightward = allowsRightward
+    }
+
+    func handleUIGestureRecognizerAction(_ recognizer: UIPanGestureRecognizer, context: Context) {
+        let translation = recognizer.translation(in: recognizer.view).x
+        switch recognizer.state {
+        case .began:
+            onBegan()
+            onChanged(translation)
+        case .changed:
+            onChanged(translation)
+        case .ended, .cancelled:
+            onEnded(translation, recognizer.velocity(in: recognizer.view).x)
+        default:
+            break
+        }
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var allowsRightward = false
+
+        func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
+            guard let pan = recognizer as? UIPanGestureRecognizer else { return false }
+            let velocity = pan.velocity(in: pan.view)
+            return abs(velocity.x) > abs(velocity.y) && (velocity.x < 0 || allowsRightward)
+        }
+    }
+}
+
 /// The checkmark Reminders shows in the navigation bar while you type: it
 /// saves, which leaves the keyboard's Return key for line breaks.
 private struct DoneEditingButton: View {

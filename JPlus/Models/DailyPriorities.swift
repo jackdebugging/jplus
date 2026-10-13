@@ -155,6 +155,23 @@ nonisolated extension ADFNode {
         return ADFNode(type: type, attrs: attrs, content: blocks)
     }
 
+    /// A copy with `item` right after the task item `id`, in the same list;
+    /// nil when there's no such item.
+    func insertingTaskItem(_ item: ADFNode, after id: String) -> ADFNode? {
+        guard var blocks = content else { return nil }
+        for (index, child) in blocks.enumerated() {
+            if child.type == "taskItem", child.attr("localId") == id {
+                blocks.insert(item, at: index + 1)
+            } else if let inserted = child.insertingTaskItem(item, after: id) {
+                blocks[index] = inserted
+            } else {
+                continue
+            }
+            return ADFNode(type: type, text: text, attrs: attrs, marks: marks, content: blocks)
+        }
+        return nil
+    }
+
     static func taskList(_ items: [ADFNode]) -> ADFNode {
         ADFNode(type: "taskList", attrs: ["localId": .string(UUID().uuidString.lowercased())], content: items)
     }

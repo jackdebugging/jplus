@@ -2,10 +2,10 @@ import Foundation
 import Observation
 
 /// Indexes the day pages under the Daily Priorities folder, loads the ones
-/// on screen, and writes edits back. Every write re-reads the page first and
-/// saves over its current version, retrying if someone else saved in
-/// between, so two people ticking boxes at once don't lose each other's
-/// changes.
+/// on screen, and writes edits back. An edit shows at once, and the save
+/// catches up. Every write re-reads the page first and saves over its
+/// current version, retrying if someone else saved in between, so two people
+/// ticking boxes at once don't lose each other's changes.
 @Observable
 final class PrioritiesModel {
     /// The root folder, once loaded.
@@ -33,6 +33,9 @@ final class PrioritiesModel {
     private var monthFolderIDs: [String: String] = [:]
     /// Writes run one after another, so edits to the same page don't race.
     private var lastWrite: Task<Void, Never>?
+    /// Edits not yet saved, oldest first. A save that finishes shows its page
+    /// with these still applied, so an edit made since doesn't blink away.
+    @ObservationIgnored private var pendingEdits: [(id: UUID, pageID: String, transform: (ADFNode) -> ADFNode)] = []
     private var generation = 0
     /// How many days the main pane opens with.
     private let initialDayCount = 5
@@ -220,10 +223,6 @@ final class PrioritiesModel {
     // MARK: - Edits
 
     func setDone(_ done: Bool, item: PriorityItem, in day: PriorityDay) {
-        // Flip it on screen right away; the save catches up.
-        pages[day.pageID]?.document = day.document.replacingTaskItems { current, node in
-            current.id == item.id ? node.settingTaskState(done: done) : node
-        }
         write(page: day.pageID, itemID: item.id, message: done ? "Done: \(item.plainText.prefix(60))" : "Reopened: \(item.plainText.prefix(60))") { document in
             document.replacingTaskItems { current, node in
                 current.id == item.id ? node.settingTaskState(done: done) : node
@@ -248,13 +247,19 @@ final class PrioritiesModel {
         }
     }
 
-    /// Adds a priority to the end of a day's list.
-    func add(_ text: String, to day: PriorityDay) async {
+    /// Adds a priority right after `itemID`, or at the end of the day's list
+    /// (also when that item has gone). Returns the new item's id, or nil for
+    /// blank text, which isn't added.
+    @discardableResult
+    func add(_ text: String, to day: PriorityDay, after itemID: String? = nil) -> String? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        let item = ADFNode.taskItem(ADFNode.inlineContent(from: trimmed, siteURL: siteURL))
-        write(page: day.pageID, itemID: nil, message: "Added: \(trimmed.prefix(60))") { $0.appendingTaskItem([item]) }
-        await lastWrite?.value
+        guard !trimmed.isEmpty else { return nil }
+        let id = UUID().uuidString.lowercased()
+        let item = ADFNode.taskItem(ADFNode.inlineContent(from: trimmed, siteURL: siteURL), id: id)
+        write(page: day.pageID, itemID: id, message: "Added: \(trimmed.prefix(60))") { document in
+            itemID.flatMap { document.insertingTaskItem(item, after: $0) } ?? document.appendingTaskItem([item])
+        }
+        return id
     }
 
     /// Moves an item from an earlier day onto today's page, when today has one.
@@ -267,16 +272,23 @@ final class PrioritiesModel {
         remove(item, from: day)
     }
 
-    /// Queues a change to a page: fetch, transform, save; again on a version
-    /// conflict. The loaded copy is replaced by what was saved.
+    /// Shows a change to a page at once and queues it: fetch, transform, save;
+    /// again on a version conflict. The loaded copy is then replaced by what
+    /// was saved, with any later edits still waiting on top.
     private func write(page pageID: String, itemID: String?, message: String, transform: @escaping (ADFNode) -> ADFNode) {
         guard let client else { return }
         if let itemID { busyItemIDs.insert(itemID) }
+        let editID = UUID()
+        pendingEdits.append((editID, pageID, transform))
+        if let document = pages[pageID]?.document { pages[pageID]?.document = transform(document) }
         let previous = lastWrite
         lastWrite = Task { [weak self] in
             await previous?.value
             guard let self else { return }
-            defer { if let itemID { busyItemIDs.remove(itemID) } }
+            defer {
+                if let itemID { busyItemIDs.remove(itemID) }
+                pendingEdits.removeAll { $0.id == editID }
+            }
             var attempts = 0
             while true {
                 attempts += 1
@@ -285,7 +297,9 @@ final class PrioritiesModel {
                     let document = transform(current.document)
                     let saved = try await client.updateConfluencePage(id: pageID, title: current.title, version: current.version.number + 1, document: document, message: message)
                     pages[pageID]?.version = saved.version.number
-                    pages[pageID]?.document = document
+                    pages[pageID]?.document = pendingEdits
+                        .filter { $0.pageID == pageID && $0.id != editID }
+                        .reduce(document) { $1.transform($0) }
                     errorMessage = nil
                     return
                 } catch let error as JiraError where error.isConflict && attempts < 3 {

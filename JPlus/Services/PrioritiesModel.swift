@@ -216,6 +216,24 @@ final class PrioritiesModel {
         for person in found { people[person.accountId] = person }
     }
 
+    /// Replies in a comment thread, a paragraph per typed line, then reads
+    /// the thread's replies back so this one shows along with any posted
+    /// since. Throws when the reply wasn't posted, so the box keeps its text.
+    func reply(_ text: String, to thread: PriorityCommentThread, in day: PriorityDay) async throws {
+        let paragraphs = text.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .map { ADFNode(type: "paragraph", content: ADFNode.inlineContent(from: $0, siteURL: siteURL)) }
+        guard let client, !paragraphs.isEmpty else { return }
+        let posted = try await client.replyToConfluenceComment(thread.root.id, document: ADFNode(type: "doc", content: paragraphs))
+        // It's posted either way; if reading back fails, show it as sent.
+        let replies = (try? await client.confluenceCommentReplies(commentID: thread.root.id)) ?? thread.replies + [posted]
+        await loadPeople(replies.compactMap(\.authorID))
+        commentThreads[day.pageID] = commentThreads[day.pageID]?.map {
+            $0.id == thread.id ? PriorityCommentThread(root: $0.root, replies: replies) : $0
+        }
+    }
+
     // MARK: - New day
 
     /// Creates the page for `date`, inside its month's folder (made if

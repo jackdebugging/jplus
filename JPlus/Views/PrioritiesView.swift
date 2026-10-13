@@ -244,6 +244,9 @@ struct PrioritiesView: View {
             .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, _ in
                 if swipedOpenID != nil { swipedOpenID = nil }
             }
+            .environment(\.revealInPriorities) { id in
+                withAnimation { proxy.scrollTo(id, anchor: .bottom) }
+            }
             #endif
         }
     }
@@ -593,8 +596,8 @@ private struct PriorityDayList: View {
 /// saves it and starts a new priority below. On the Mac the caret goes where
 /// the click landed. On iOS it looks like a reminder (a round check, and a
 /// hairline beneath), and swiping it left shows Edit and Delete. Comments on
-/// it in Confluence show beneath its text, and while it has any its text
-/// can't be edited, since they hang on that text.
+/// it in Confluence show beneath its text, where they can be replied to, and
+/// while it has any its text can't be edited, since they hang on that text.
 private struct PriorityItemRow: View {
     let item: PriorityItem
     let day: PriorityDay
@@ -614,6 +617,8 @@ private struct PriorityItemRow: View {
     @State private var isEditing = false
     @State private var draft = ""
     @FocusState private var isFocused: Bool
+    /// The comment thread whose reply box is open.
+    @State private var replyingTo: String?
     @Environment(\.textSizeScale) private var textScale
     @Environment(\.appFont) private var appFont
     @Environment(\.openURL) private var openURL
@@ -650,7 +655,8 @@ private struct PriorityItemRow: View {
                     if open { swipedOpenID = item.id } else if swipedOpenID == item.id { swipedOpenID = nil }
                 }
             ),
-            isEnabled: !isEditing,
+            // Not while typing a reply, where a sideways drag selects text.
+            isEnabled: !isEditing && replyingTo == nil,
             onEdit: swipeEdit,
             onDelete: { model.remove(item, from: day) }
         ))
@@ -674,9 +680,10 @@ private struct PriorityItemRow: View {
             VStack(alignment: .leading, spacing: 8) {
                 text
                 if !threads.isEmpty {
-                    PriorityComments(threads: threads, model: model)
-                        // Faded with a finished item, as its text is.
-                        .opacity(item.isDone ? 0.5 : 1)
+                    PriorityComments(threads: threads, day: day, model: model, replyingTo: $replyingTo)
+                        // Faded with a finished item, as its text is, but not
+                        // while a reply is being typed.
+                        .opacity(item.isDone && replyingTo == nil ? 0.5 : 1)
                 }
             }
             if isBusy {
@@ -863,15 +870,19 @@ private struct PriorityItemRow: View {
 }
 
 /// An item's comment threads from Confluence, under its text: each comment
-/// with its replies indented beside a line, as on the issue page, and a link
-/// to reply on the page in Confluence.
+/// with its replies indented beside a line, as on the issue page. Reply opens
+/// a box at the end of the thread; the comment can also open in Confluence.
 private struct PriorityComments: View {
     let threads: [PriorityCommentThread]
+    let day: PriorityDay
     let model: PrioritiesModel
+    /// The thread whose reply box is open.
+    @Binding var replyingTo: String?
 
     @Environment(\.openURL) private var openURL
 
     private static let avatarSize: CGFloat = 22
+    static let replyAvatarSize: CGFloat = 18
     private static let spacing: CGFloat = 8
     /// Where a comment's text starts, past its avatar.
     private static let textInset = avatarSize + spacing
@@ -879,11 +890,15 @@ private struct PriorityComments: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             ForEach(threads) { thread in
+                let isReplying = replyingTo == thread.id
                 VStack(alignment: .leading, spacing: 8) {
                     comment(thread.root, avatarSize: Self.avatarSize)
-                    if !thread.replies.isEmpty {
+                    if !thread.replies.isEmpty || isReplying {
                         VStack(alignment: .leading, spacing: 8) {
-                            ForEach(thread.replies) { comment($0, avatarSize: 18) }
+                            ForEach(thread.replies) { comment($0, avatarSize: Self.replyAvatarSize) }
+                            if isReplying {
+                                PriorityReplyComposer(thread: thread, day: day, model: model) { replyingTo = nil }
+                            }
                         }
                         // The line runs down from the middle of the comment's
                         // avatar; replies start under its text.
@@ -893,13 +908,19 @@ private struct PriorityComments: View {
                         }
                         .padding(.leading, Self.avatarSize / 2 - 1)
                     }
-                    if let url = thread.root.webURL(on: model.siteURL) {
-                        Button("Reply in Confluence", systemImage: "arrowshape.turn.up.left") { openURL(url) }
-                            .buttonStyle(.borderless)
-                            .scaledFont(.caption)
-                            .foregroundStyle(.secondary)
-                            .help("Open this comment in Confluence to reply")
-                            .padding(.leading, Self.textInset)
+                    if !isReplying {
+                        HStack(spacing: 14) {
+                            Button("Reply", systemImage: "arrowshape.turn.up.left") { replyingTo = thread.id }
+                                .help("Reply in this thread")
+                            if let url = thread.root.webURL(on: model.siteURL) {
+                                Button("Open in Confluence", systemImage: "arrow.up.forward.square") { openURL(url) }
+                                    .help("Open this comment on its page in Confluence")
+                            }
+                        }
+                        .buttonStyle(.borderless)
+                        .scaledFont(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, Self.textInset)
                     }
                 }
             }
@@ -928,6 +949,95 @@ private struct PriorityComments: View {
             }
             .scaledFont(.callout)
         }
+        // Next to a reply box on iOS, the text was otherwise cut to one line.
+        .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// The box for a reply at the end of a comment thread, as on the issue page.
+/// It takes plain text, with issue keys and links made into cards and links.
+/// ⌘↩ posts; posting or Cancel closes it.
+private struct PriorityReplyComposer: View {
+    let thread: PriorityCommentThread
+    let day: PriorityDay
+    let model: PrioritiesModel
+    let onEnd: () -> Void
+
+    @Environment(SessionStore.self) private var session
+    #if os(iOS)
+    @Environment(\.revealInPriorities) private var reveal
+    #endif
+    @State private var draft = ""
+    @State private var isPosting = false
+    @State private var error: String?
+    @FocusState private var isFocused: Bool
+
+    private var canPost: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isPosting }
+    private var revealID: String { "reply-\(thread.id)" }
+
+    private var placeholder: String {
+        guard let name = thread.root.authorID.flatMap({ model.people[$0] })?.displayName else { return "Reply…" }
+        return "Reply to \(name)…"
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            AvatarView(user: session.currentUser, size: PriorityComments.replyAvatarSize)
+            VStack(alignment: .leading, spacing: 8) {
+                ZStack(alignment: .topLeading) {
+                    TextEditor(text: $draft)
+                        .scrollContentBackground(.hidden)
+                        .focused($isFocused)
+                        .disabled(isPosting)
+                    if draft.isEmpty {
+                        Text(placeholder)
+                            .foregroundStyle(.tertiary)
+                            .padding(.leading, 5)
+                            .allowsHitTesting(false)
+                    }
+                }
+                .scaledFont(.callout)
+                .frame(height: 64)
+                .padding(6)
+                .background(Color.textBackground, in: RoundedRectangle(cornerRadius: 6))
+                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(isFocused ? AnyShapeStyle(.tint) : AnyShapeStyle(.quaternary)))
+
+                HStack(spacing: 8) {
+                    Button("Reply") { Task { await post() } }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(!canPost)
+                        .keyboardShortcut(isFocused ? KeyboardShortcut(.return, modifiers: .command) : nil)
+                        .help("Post reply (⌘↩)")
+                    Button("Cancel", action: onEnd)
+                        .disabled(isPosting)
+                    if isPosting { ProgressView().controlSize(.small) }
+                }
+                .controlSize(.small)
+                if let error { ErrorLabel(message: error) }
+            }
+        }
+        .id(revealID)
+        .onAppear { isFocused = true }
+        #if os(iOS)
+        // iOS keeps only the caret above the keyboard; bring up the buttons too.
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) { _ in
+            if isFocused { reveal(revealID) }
+        }
+        #endif
+    }
+
+    private func post() async {
+        guard canPost else { return }
+        isPosting = true
+        error = nil
+        do {
+            try await model.reply(draft, to: thread, in: day)
+            draft = ""
+            onEnd()
+        } catch {
+            self.error = "Couldn't post: \(error.localizedDescription)"
+        }
+        isPosting = false
     }
 }
 
@@ -1219,5 +1329,11 @@ private struct DoneEditingButton: View {
                 .fontWeight(.semibold)
         }
     }
+}
+
+private extension EnvironmentValues {
+    /// Scrolls the priorities so the view with this id sits just above the
+    /// keyboard, for a field with buttons below it that the keyboard would hide.
+    @Entry var revealInPriorities: (String) -> Void = { _ in }
 }
 #endif

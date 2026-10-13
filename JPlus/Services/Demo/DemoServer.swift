@@ -216,6 +216,19 @@ nonisolated final class DemoServer: @unchecked Sendable {
             let id = p[0]
             return ok(["results": state.pageComments.filter { $0.parentID == id }.map(pageCommentJSON)])
         }
+        if match(method, parts, "POST wiki/api/v2/inline-comments") != nil {
+            // Replies only; the app doesn't start threads, which would mean highlighting page text.
+            guard let parentID = json["parentCommentId"] as? String,
+                  let parent = state.pageComments.first(where: { $0.id == parentID }) else {
+                return error(400, "A parent comment is required.")
+            }
+            let value = (json["body"] as? [String: Any])?["value"] as? String ?? ""
+            let body = (try? JSONSerialization.jsonObject(with: Data(value.utf8))) as? [String: Any] ?? ADF.doc([])
+            let reply = DemoPageComment(id: newID(), pageID: parent.pageID, author: me, body: body, created: Date(),
+                                        markerRef: nil, parentID: parentID)
+            state.pageComments.append(reply)
+            return ok(pageCommentJSON(reply), status: 201)
+        }
         if match(method, parts, "POST wiki/api/v2/pages") != nil {
             let body = (json["body"] as? [String: Any])?["value"] as? String ?? "{\"type\":\"doc\",\"version\":1,\"content\":[]}"
             let page = DemoPage(id: newID(), title: json["title"] as? String ?? "Untitled", parentID: json["parentId"] as? String ?? "901",

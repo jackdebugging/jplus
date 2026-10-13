@@ -64,7 +64,7 @@ private struct PickerRow<Content: View>: View {
     }
 }
 
-private struct ErrorLabel: View {
+struct ErrorLabel: View {
     let message: String
 
     var body: some View {

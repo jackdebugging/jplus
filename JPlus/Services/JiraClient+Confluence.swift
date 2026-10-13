@@ -59,6 +59,16 @@ extension JiraClient {
         return page.results
     }
 
+    /// Adds a reply to the thread an inline comment starts. A reply hangs on
+    /// its parent, so it names no page and highlights no text of its own.
+    @discardableResult
+    func replyToConfluenceComment(_ commentID: String, document: ADFNode) async throws -> ConfluenceComment {
+        try await post("/wiki/api/v2/inline-comments", json: [
+            "parentCommentId": commentID,
+            "body": try Self.confluenceBody(document),
+        ])
+    }
+
     func createConfluenceFolder(title: String, spaceID: String, parentID: String) async throws -> ConfluenceFolder {
         try await post("/wiki/api/v2/folders", json: [
             "spaceId": spaceID,
@@ -93,7 +103,7 @@ extension JiraClient {
         try await delete("/wiki/api/v2/pages/\(id)")
     }
 
-    /// Pages take ADF as a JSON string, with the schema version at the root.
+    /// Pages and comments take ADF as a JSON string, with the schema version at the root.
     private static func confluenceBody(_ document: ADFNode) throws -> [String: Any] {
         let data = try JSONEncoder().encode(document)
         guard var object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {

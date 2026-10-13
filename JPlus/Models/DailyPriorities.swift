@@ -9,6 +9,21 @@ nonisolated struct PriorityItem: Identifiable, Hashable, Sendable {
     var content: [ADFNode]
 
     var plainText: String { content.map(\.plainText).joined() }
+
+    /// Ids of the inline comments highlighting this item's text.
+    var commentMarkerIDs: Set<String> { Set(content.flatMap(\.inlineCommentIDs)) }
+
+    /// The content without its comment highlights, for a copy on another
+    /// page, where those comments don't exist.
+    var contentWithoutComments: [ADFNode] { content.map { $0.removingInlineComments() } }
+}
+
+/// An inline comment on a day's page, with the replies under it.
+nonisolated struct PriorityCommentThread: Identifiable, Hashable, Sendable {
+    let root: ConfluenceComment
+    let replies: [ConfluenceComment]
+
+    var id: String { root.id }
 }
 
 /// One day's page under the Daily Priorities folder, named `yyyy-MM-dd`.
@@ -172,6 +187,19 @@ nonisolated extension ADFNode {
         return nil
     }
 
+    /// Ids of the inline comments whose highlight covers part of this node.
+    var inlineCommentIDs: [String] {
+        let own = (marks ?? []).filter(\.isInlineComment).compactMap { $0.attr("id") }
+        return own + children.flatMap(\.inlineCommentIDs)
+    }
+
+    /// A copy without inline comment highlights; other marks stay.
+    func removingInlineComments() -> ADFNode {
+        let kept = marks?.filter { !$0.isInlineComment }
+        return ADFNode(type: type, text: text, attrs: attrs, marks: kept?.isEmpty == true ? nil : kept,
+                       content: content?.map { $0.removingInlineComments() })
+    }
+
     static func taskList(_ items: [ADFNode]) -> ADFNode {
         ADFNode(type: "taskList", attrs: ["localId": .string(UUID().uuidString.lowercased())], content: items)
     }
@@ -219,4 +247,9 @@ nonisolated extension ADFNode {
         flush()
         return nodes
     }
+}
+
+nonisolated extension ADFMark {
+    /// The highlight an inline comment hangs on.
+    var isInlineComment: Bool { type == "annotation" && attr("annotationType") == "inlineComment" }
 }

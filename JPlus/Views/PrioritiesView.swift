@@ -277,10 +277,13 @@ struct PrioritiesView: View {
                 VStack(alignment: .leading, spacing: Self.rowSpacing) {
                     ForEach(day.items) { item in
                         let spot = NewItemSpot(pageID: day.pageID, afterID: item.id)
+                        let hasComments = model.hasComments(item, in: day)
                         PriorityItemRow(
                             item: item,
                             day: day,
-                            canMoveToToday: model.todayRef.map { $0.pageID != day.pageID } ?? false,
+                            threads: model.threads(on: item, in: day),
+                            hasComments: hasComments,
+                            canMoveToToday: !hasComments && (model.todayRef.map { $0.pageID != day.pageID } ?? false),
                             isBusy: model.busyItemIDs.contains(item.id),
                             model: model,
                             swipedOpenID: $swipedOpenID,
@@ -589,11 +592,17 @@ private struct PriorityDayList: View {
 /// on a link opens the link), the change saves when you're done, and Return
 /// saves it and starts a new priority below. On the Mac the caret goes where
 /// the click landed. On iOS it looks like a reminder (a round check, and a
-/// hairline beneath), and swiping it left shows Edit and Delete.
+/// hairline beneath), and swiping it left shows Edit and Delete. Comments on
+/// it in Confluence show beneath its text, and while it has any its text
+/// can't be edited, since they hang on that text.
 private struct PriorityItemRow: View {
     let item: PriorityItem
     let day: PriorityDay
-    /// Today has a page and this item is on another day.
+    /// Its open comment threads, oldest first.
+    let threads: [PriorityCommentThread]
+    /// It has open comments (or may, until they load), so it isn't edited.
+    let hasComments: Bool
+    /// Today has a page, this item is on another day, and it has no comments.
     let canMoveToToday: Bool
     let isBusy: Bool
     let model: PrioritiesModel
@@ -642,7 +651,7 @@ private struct PriorityItemRow: View {
                 }
             ),
             isEnabled: !isEditing,
-            onEdit: beginEdit,
+            onEdit: swipeEdit,
             onDelete: { model.remove(item, from: day) }
         ))
         #else
@@ -650,57 +659,23 @@ private struct PriorityItemRow: View {
         #endif
     }
 
+    #if os(iOS)
+    /// The swipe's Edit, which an item with comments doesn't get.
+    private var swipeEdit: (() -> Void)? {
+        if hasComments { return nil }
+        return { beginEdit() }
+    }
+    #endif
+
     private var line: some View {
         HStack(alignment: .firstTextBaseline, spacing: Self.lineSpacing) {
             check
 
-            if isEditing {
-                TextField("Priority", text: $draft, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .lineLimit(1...6)
-                    .focused($isFocused)
-                    #if os(macOS)
-                    .onSubmit(submitEdit)
-                    // There's nothing to cancel: what's typed is kept, as in Reminders.
-                    .onEscape(perform: commitEdit)
-                    .onChange(of: isFocused) { if isFocused { placeCaret() } else { commitEdit() } }
-                    .endsEditingOnClickOutside(isFocused: isFocused, text: draft)
-                    #else
-                    .onChange(of: draft) { old, new in
-                        guard isReturnKeystroke(from: old, to: new) else { return }
-                        draft = old
-                        submitEdit()
-                    }
-                    .onEscape { isEditing = false }
-                    .onChange(of: isFocused) { if !isFocused { commitEdit() } }
-                    // Return starts a new priority below; the checkmark saves.
-                    .toolbar {
-                        ToolbarItem(placement: .confirmationAction) {
-                            DoneEditingButton(action: commitEdit)
-                        }
-                    }
-                    #endif
-                    .onDisappear(perform: commitEdit)
-            } else {
-                Text(ADFInline.attributedString(item.content, textScale: textScale, font: appFont))
-                    .strikethrough(item.isDone && Self.strikesDone)
-                    .foregroundStyle(item.isDone ? .secondary : .primary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-                    // One click edits, as in Reminders. It runs alongside link
-                    // handling so links still open, and a link click doesn't edit.
-                    .environment(\.openURL, OpenURLAction { url in
-                        clickedLink = true
-                        openURL(url)
-                        return .handled
-                    })
-                    .simultaneousGesture(SpatialTapGesture().onEnded { tap in
-                        // A link opens during the same click; look once it has.
-                        DispatchQueue.main.async {
-                            if !clickedLink { tapped(at: tap.location) }
-                            clickedLink = false
-                        }
-                    })
+            VStack(alignment: .leading, spacing: 8) {
+                text
+                if !threads.isEmpty {
+                    PriorityComments(threads: threads, model: model)
+                }
             }
             if isBusy {
                 ProgressView().controlSize(.mini)
@@ -709,11 +684,13 @@ private struct PriorityItemRow: View {
         .contextMenu {
             #if os(macOS)
             Button("Edit", systemImage: "pencil", action: beginEdit)
+                .disabled(hasComments)
             Button("Delete", systemImage: "trash", role: .destructive) {
                 model.remove(item, from: day)
             }
             #else
             Button("Edit…", systemImage: "pencil", action: beginEdit)
+                .disabled(hasComments)
             Button(item.isDone ? "Mark Not Done" : "Mark Done", systemImage: item.isDone ? Self.openSymbol : Self.doneSymbol) {
                 model.setDone(!item.isDone, item: item, in: day)
             }
@@ -730,6 +707,60 @@ private struct PriorityItemRow: View {
                 model.remove(item, from: day)
             }
             #endif
+        }
+    }
+
+    /// The item's text, or the field editing it.
+    @ViewBuilder
+    private var text: some View {
+        if isEditing {
+            TextField("Priority", text: $draft, axis: .vertical)
+                .textFieldStyle(.plain)
+                .lineLimit(1...6)
+                .focused($isFocused)
+                #if os(macOS)
+                .onSubmit(submitEdit)
+                // There's nothing to cancel: what's typed is kept, as in Reminders.
+                .onEscape(perform: commitEdit)
+                .onChange(of: isFocused) { if isFocused { placeCaret() } else { commitEdit() } }
+                .endsEditingOnClickOutside(isFocused: isFocused, text: draft)
+                #else
+                .onChange(of: draft) { old, new in
+                    guard isReturnKeystroke(from: old, to: new) else { return }
+                    draft = old
+                    submitEdit()
+                }
+                .onEscape { isEditing = false }
+                .onChange(of: isFocused) { if !isFocused { commitEdit() } }
+                // Return starts a new priority below; the checkmark saves.
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        DoneEditingButton(action: commitEdit)
+                    }
+                }
+                #endif
+                .onDisappear(perform: commitEdit)
+        } else {
+            Text(ADFInline.attributedString(item.content, textScale: textScale, font: appFont))
+                .strikethrough(item.isDone && Self.strikesDone)
+                .foregroundStyle(item.isDone ? .secondary : .primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .help(hasComments ? "Commented on in Confluence, so it can't be edited here" : "")
+                // One click edits, as in Reminders. It runs alongside link
+                // handling so links still open, and a link click doesn't edit.
+                .environment(\.openURL, OpenURLAction { url in
+                    clickedLink = true
+                    openURL(url)
+                    return .handled
+                })
+                .simultaneousGesture(SpatialTapGesture().onEnded { tap in
+                    // A link opens during the same click; look once it has.
+                    DispatchQueue.main.async {
+                        if !clickedLink { tapped(at: tap.location) }
+                        clickedLink = false
+                    }
+                })
         }
     }
 
@@ -772,6 +803,8 @@ private struct PriorityItemRow: View {
     #endif
 
     private func beginEdit() {
+        // New text would drop the highlight its comments hang on.
+        guard !hasComments else { return }
         draft = item.plainText
         isEditing = true
         isFocused = true
@@ -823,6 +856,75 @@ private struct PriorityItemRow: View {
         isEditing = false
         if draft != item.plainText {
             model.setText(draft, item: item, in: day)
+        }
+    }
+}
+
+/// An item's comment threads from Confluence, under its text: each comment
+/// with its replies indented beside a line, as on the issue page, and a link
+/// to reply on the page in Confluence.
+private struct PriorityComments: View {
+    let threads: [PriorityCommentThread]
+    let model: PrioritiesModel
+
+    @Environment(\.openURL) private var openURL
+
+    private static let avatarSize: CGFloat = 22
+    private static let spacing: CGFloat = 8
+    /// Where a comment's text starts, past its avatar.
+    private static let textInset = avatarSize + spacing
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            ForEach(threads) { thread in
+                VStack(alignment: .leading, spacing: 8) {
+                    comment(thread.root, avatarSize: Self.avatarSize)
+                    if !thread.replies.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(thread.replies) { comment($0, avatarSize: 18) }
+                        }
+                        // The line runs down from the middle of the comment's
+                        // avatar; replies start under its text.
+                        .padding(.leading, Self.textInset - Self.avatarSize / 2 + 1)
+                        .overlay(alignment: .leading) {
+                            Rectangle().fill(.quaternary).frame(width: 2)
+                        }
+                        .padding(.leading, Self.avatarSize / 2 - 1)
+                    }
+                    if let url = thread.root.webURL(on: model.siteURL) {
+                        Button("Reply in Confluence", systemImage: "arrowshape.turn.up.left") { openURL(url) }
+                            .buttonStyle(.borderless)
+                            .scaledFont(.caption)
+                            .foregroundStyle(.secondary)
+                            .help("Open this comment in Confluence to reply")
+                            .padding(.leading, Self.textInset)
+                    }
+                }
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func comment(_ comment: ConfluenceComment, avatarSize: CGFloat) -> some View {
+        let author = comment.authorID.flatMap { model.people[$0] }
+        return HStack(alignment: .top, spacing: Self.spacing) {
+            AvatarView(user: author, size: avatarSize)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text(author?.displayName ?? "Unknown").fontWeight(.medium)
+                    if let date = comment.date {
+                        Text(date, format: .relative(presentation: .named))
+                            .foregroundStyle(.secondary)
+                            .help(date.formatted(date: .abbreviated, time: .shortened))
+                    }
+                }
+                if let document = comment.document {
+                    ADFView(node: document)
+                }
+            }
+            .scaledFont(.callout)
         }
     }
 }
@@ -993,20 +1095,23 @@ private struct SwipeToRevealActions: ViewModifier {
     @Binding var isOpen: Bool
     /// Off while the row is being edited, so drags select text.
     let isEnabled: Bool
-    let onEdit: () -> Void
+    /// Nil for a row that can't be edited, which shows only Delete.
+    let onEdit: (() -> Void)?
     let onDelete: () -> Void
 
     @State private var offset: CGFloat = 0
     @State private var startOffset: CGFloat = 0
     private static let buttonWidth: CGFloat = 74
-    private static let openOffset = -2 * buttonWidth
+    private var openOffset: CGFloat { -Self.buttonWidth * (onEdit == nil ? 1 : 2) }
 
     func body(content: Content) -> some View {
         content
             .offset(x: offset)
             .background(alignment: .trailing) {
                 HStack(spacing: 0) {
-                    button("Edit", tint: .green, action: onEdit)
+                    if let onEdit {
+                        button("Edit", tint: .green, action: onEdit)
+                    }
                     button("Delete", tint: .red, action: onDelete)
                 }
                 .frame(width: max(0, -offset))
@@ -1018,10 +1123,10 @@ private struct SwipeToRevealActions: ViewModifier {
             } onChanged: { translation in
                 let target = startOffset + translation
                 // Past fully open it stretches, with resistance.
-                offset = target < Self.openOffset ? Self.openOffset + (target - Self.openOffset) / 3 : min(0, target)
+                offset = target < openOffset ? openOffset + (target - openOffset) / 3 : min(0, target)
             } onEnded: { translation, velocity in
                 let target = startOffset + translation
-                settle(open: velocity < -300 || (velocity < 300 && target < Self.openOffset / 2))
+                settle(open: velocity < -300 || (velocity < 300 && target < openOffset / 2))
             })
             .onChange(of: isOpen) { if !isOpen { settle(open: false) } }
             .onChange(of: isEnabled) { if !isEnabled { isOpen = false } }
@@ -1046,7 +1151,7 @@ private struct SwipeToRevealActions: ViewModifier {
     }
 
     private func settle(open: Bool) {
-        withAnimation(.snappy) { offset = open ? Self.openOffset : 0 }
+        withAnimation(.snappy) { offset = open ? openOffset : 0 }
         if isOpen != open { isOpen = open }
     }
 }

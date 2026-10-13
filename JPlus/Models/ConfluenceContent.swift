@@ -87,3 +87,46 @@ nonisolated struct ConfluencePage: Decodable, Identifiable, Hashable, Sendable {
         return siteURL.appending(path: "wiki/pages/\(id)")
     }
 }
+
+/// Element of `GET /wiki/api/v2/pages/{id}/inline-comments` and
+/// `…/inline-comments/{id}/children`. An inline comment hangs on a stretch
+/// of the page's text, which carries an `annotation` mark whose id is the
+/// comment's `inlineMarkerRef`; replies have no marker of their own.
+nonisolated struct ConfluenceComment: Decodable, Identifiable, Hashable, Sendable {
+    let id: String
+    let parentCommentId: String?
+    /// `open`, `reopened`, `resolved` or `dangling` (its text is gone).
+    let resolutionStatus: String?
+    let version: Version
+    let body: ConfluencePage.Body?
+    let properties: Properties?
+    let _links: ConfluencePage.Links?
+
+    nonisolated struct Version: Decodable, Hashable, Sendable {
+        let authorId: String?
+        let createdAt: Date?
+    }
+
+    nonisolated struct Properties: Decodable, Hashable, Sendable {
+        let inlineMarkerRef: String?
+        let inlineOriginalSelection: String?
+    }
+
+    var authorID: String? { version.authorId }
+    /// When this version was saved: when it was posted, or last edited.
+    var date: Date? { version.createdAt }
+    var markerRef: String? { properties?.inlineMarkerRef }
+
+    /// The comment's text as an ADF tree, or nil when it has none.
+    var document: ADFNode? {
+        guard let value = body?.atlas_doc_format?.value else { return nil }
+        return try? JSONDecoder().decode(ADFNode.self, from: Data(value.utf8))
+    }
+
+    /// The page in a browser, scrolled to this comment. The list's base
+    /// isn't on each comment, so the site's `/wiki` stands in for it.
+    func webURL(on siteURL: URL) -> URL? {
+        guard let webui = _links?.webui else { return nil }
+        return URL(string: (_links?.base ?? siteURL.absoluteString + "/wiki") + webui)
+    }
+}

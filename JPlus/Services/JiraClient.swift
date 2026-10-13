@@ -285,6 +285,16 @@ struct JiraClient: Sendable {
         return users.filter { ($0.accountType ?? "atlassian") == "atlassian" && $0.active != false }
     }
 
+    /// The people with these account ids, e.g. the authors of Confluence
+    /// comments, which name only the id. Ids with no one behind them are left out.
+    func users(accountIDs: [String]) async throws -> [JiraUser] {
+        struct Page: Decodable { let values: [JiraUser] }
+        let page: Page = try await get("/rest/api/3/user/bulk", query: accountIDs.map { URLQueryItem(name: "accountId", value: $0) } + [
+            URLQueryItem(name: "maxResults", value: String(max(accountIDs.count, 1))),
+        ])
+        return page.values
+    }
+
     /// The moves the workflow allows from the issue's current status.
     func transitions(issueKey: String) async throws -> [JiraTransition] {
         struct Response: Decodable { let transitions: [JiraTransition] }

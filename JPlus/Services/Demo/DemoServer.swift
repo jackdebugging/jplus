@@ -61,6 +61,11 @@ nonisolated final class DemoServer: @unchecked Sendable {
                  "schema": ["type": "team", "custom": "com.atlassian.jira.plugin.system.customfieldtypes:atlassian-team"]],
             ])
         }
+        if match(method, parts, "GET rest/api/3/user/bulk") != nil {
+            // The query keeps only the last accountId, so this answers with everyone.
+            let values = state.users.map { userJSON($0.id) }
+            return ok(["values": values, "isLast": true, "total": values.count, "startAt": 0, "maxResults": values.count])
+        }
         if match(method, parts, "GET rest/api/3/user/search") != nil || match(method, parts, "GET rest/api/3/user/assignable/search") != nil {
             let text = (query["query"] ?? "").lowercased()
             let users = state.users.filter { text.isEmpty || $0.name.lowercased().contains(text) || $0.email.lowercased().contains(text) }
@@ -201,6 +206,15 @@ nonisolated final class DemoServer: @unchecked Sendable {
             let id = p[0]
             guard let page = state.pages.first(where: { $0.id == id }) else { return error(404, "Page not found.") }
             return ok(pageJSON(page))
+        }
+        if let p = match(method, parts, "GET wiki/api/v2/pages/*/inline-comments") {
+            let id = p[0]
+            let comments = state.pageComments.filter { $0.pageID == id && $0.parentID == nil }.map(pageCommentJSON)
+            return ok(["results": comments, "_links": ["base": "\(DemoSite.siteURL)/wiki"]])
+        }
+        if let p = match(method, parts, "GET wiki/api/v2/inline-comments/*/children") {
+            let id = p[0]
+            return ok(["results": state.pageComments.filter { $0.parentID == id }.map(pageCommentJSON)])
         }
         if match(method, parts, "POST wiki/api/v2/pages") != nil {
             let body = (json["body"] as? [String: Any])?["value"] as? String ?? "{\"type\":\"doc\",\"version\":1,\"content\":[]}"
@@ -387,6 +401,20 @@ nonisolated final class DemoServer: @unchecked Sendable {
         } else {
             result["parentType"] = "space"
         }
+        return result
+    }
+
+    private func pageCommentJSON(_ comment: DemoPageComment) -> [String: Any] {
+        let page = state.pages.first { $0.id == comment.pageID }
+        let body = (try? JSONSerialization.data(withJSONObject: comment.body, options: [.withoutEscapingSlashes])) ?? Data()
+        var result: [String: Any] = [
+            "id": comment.id, "status": "current", "pageId": comment.pageID, "resolutionStatus": "open",
+            "version": ["number": 1, "authorId": comment.author, "createdAt": stamp(comment.created)],
+            "body": ["atlas_doc_format": ["value": String(decoding: body, as: UTF8.self), "representation": "atlas_doc_format"]],
+            "_links": ["webui": "/spaces/APP/pages/\(comment.pageID)/\(page?.title ?? "")?focusedCommentId=\(comment.id)"],
+        ]
+        if let parent = comment.parentID { result["parentCommentId"] = parent }
+        if let marker = comment.markerRef { result["properties"] = ["inlineMarkerRef": marker] }
         return result
     }
 

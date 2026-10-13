@@ -117,6 +117,18 @@ nonisolated struct DemoPage: Sendable {
     var body: String
 }
 
+/// An open inline comment on a day page, or a reply to one.
+nonisolated struct DemoPageComment: @unchecked Sendable {
+    let id: String
+    let pageID: String
+    let author: String
+    let body: [String: Any]
+    let created: Date
+    /// The highlight in the page's text; nil for a reply.
+    let markerRef: String?
+    var parentID: String?
+}
+
 nonisolated struct DemoState: @unchecked Sendable {
     var users: [DemoUser]
     var statuses: [DemoStatus]
@@ -128,6 +140,7 @@ nonisolated struct DemoState: @unchecked Sendable {
     var issues: [DemoIssue]
     var folders: [DemoFolder]
     var pages: [DemoPage]
+    var pageComments: [DemoPageComment]
     var nextID: Int = 50_000
 }
 
@@ -192,6 +205,11 @@ nonisolated enum ADF {
     static func task(_ parts: [Any], done: Bool = false) -> Node {
         ["type": "taskItem", "attrs": ["localId": UUID().uuidString.lowercased(), "state": done ? "DONE" : "TODO"],
          "content": parts.map { part -> Node in (part as? Node) ?? t(part as? String ?? "") }]
+    }
+
+    /// Text with an inline comment's highlight, which `markerRef` names.
+    static func commented(_ text: String, markerRef: String) -> Node {
+        ["type": "text", "text": text, "marks": [["type": "annotation", "attrs": ["annotationType": "inlineComment", "id": markerRef]]]]
     }
 
     static func taskList(_ items: [Node]) -> Node {
@@ -540,10 +558,12 @@ nonisolated enum DemoData {
         dayFormatter.locale = Locale(identifier: "en_US_POSIX")
         dayFormatter.dateFormat = "yyyy-MM-dd"
 
+        // A comment on today's crash item, with a reply.
+        let crashMarker = "5f0c2a9e-7d41-4b8e-9a36-2c1e8f4d7b10"
         let dayItems: [[ADF.Node]] = [
             [ADF.task(["APP-121: fix duplicate heart rate samples before Thursday's build"]),
              ADF.task(["Review ", ADF.mention(diego), "'s video cache pull request (APP-111)"]),
-             ADF.task(["APP-125: rest timer crash, 41 reports this week"]),
+             ADF.task(["APP-125: ", ADF.commented("rest timer crash, 41 reports this week", markerRef: crashMarker)]),
              ADF.task(["Check WEB-26 on staging in Safari"], done: true)],
             [ADF.task(["APP-110: plan screen Download button"], done: true),
              ADF.task(["Answer ", ADF.mention(sam), " about the 2.6.0 test plan"], done: true),
@@ -589,7 +609,15 @@ nonisolated enum DemoData {
             teams: teams,
             issues: issues,
             folders: allFolders,
-            pages: pages
+            pages: pages,
+            pageComments: [
+                DemoPageComment(id: "1200", pageID: "1000", author: priya.id,
+                                body: ADF.doc([ADF.p(ADF.mention(reviewer), " Down to 3 reports since the 2.5.2 hotfix. All on iOS 17, when the timer ends in the background.")]),
+                                created: hoursAgo(3), markerRef: crashMarker),
+                DemoPageComment(id: "1201", pageID: "1000", author: diego.id,
+                                body: ADF.doc([ADF.p("I can take it after standup. It looks like APP-111's cache work touched the same timer.")]),
+                                created: hoursAgo(1), markerRef: nil, parentID: "1200"),
+            ]
         )
     }
 }

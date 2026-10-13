@@ -34,6 +34,31 @@ extension JiraClient {
         ])
     }
 
+    /// A page's open inline comments (the ones on highlighted text), oldest
+    /// first. Replies aren't among them; `confluenceCommentReplies` has those.
+    func confluenceInlineComments(pageID: String) async throws -> [ConfluenceComment] {
+        struct Page: Decodable { let results: [ConfluenceComment] }
+        let page: Page = try await get("/wiki/api/v2/pages/\(pageID)/inline-comments", query: [
+            URLQueryItem(name: "body-format", value: "atlas_doc_format"),
+            URLQueryItem(name: "resolution-status", value: "open"),
+            URLQueryItem(name: "resolution-status", value: "reopened"),
+            URLQueryItem(name: "sort", value: "created-date"),
+            URLQueryItem(name: "limit", value: "250"),
+        ])
+        return page.results
+    }
+
+    /// The replies to an inline comment, oldest first.
+    func confluenceCommentReplies(commentID: String) async throws -> [ConfluenceComment] {
+        struct Page: Decodable { let results: [ConfluenceComment] }
+        let page: Page = try await get("/wiki/api/v2/inline-comments/\(commentID)/children", query: [
+            URLQueryItem(name: "body-format", value: "atlas_doc_format"),
+            URLQueryItem(name: "sort", value: "created-date"),
+            URLQueryItem(name: "limit", value: "250"),
+        ])
+        return page.results
+    }
+
     func createConfluenceFolder(title: String, spaceID: String, parentID: String) async throws -> ConfluenceFolder {
         try await post("/wiki/api/v2/folders", json: [
             "spaceId": spaceID,

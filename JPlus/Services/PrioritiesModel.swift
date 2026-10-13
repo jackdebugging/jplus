@@ -15,6 +15,11 @@ final class PrioritiesModel {
     private(set) var index: [PriorityDayRef] = []
     /// Loaded day pages by page id.
     private(set) var pages: [String: PriorityDay] = [:]
+    /// Each loaded page's open comment threads, by page id; none until its
+    /// comments have loaded.
+    private(set) var commentThreads: [String: [PriorityCommentThread]] = [:]
+    /// Comment authors by account id.
+    private(set) var people: [String: JiraUser] = [:]
     /// Days in the main pane, top first: the selected day, then each earlier
     /// day loaded below it — the last few at first, more with Load Previous Day.
     private(set) var shownIDs: [String] = []
@@ -40,7 +45,7 @@ final class PrioritiesModel {
     /// How many days the main pane opens with.
     private let initialDayCount = 5
 
-    private var siteURL: URL { client?.credentials.siteURL ?? URL(string: "https://atlassian.net")! }
+    var siteURL: URL { client?.credentials.siteURL ?? URL(string: "https://atlassian.net")! }
 
     var todayTitle: String { PriorityNaming.dayTitle(for: Date()) }
     var todayRef: PriorityDayRef? { ref(titled: todayTitle) }
@@ -61,6 +66,22 @@ final class PrioritiesModel {
     func dayBefore(_ date: Date) -> PriorityDayRef? {
         let title = PriorityNaming.dayTitle(for: date)
         return index.first { $0.title < title }
+    }
+
+    /// The open comment threads on an item: those whose highlight is in its text.
+    func threads(on item: PriorityItem, in day: PriorityDay) -> [PriorityCommentThread] {
+        let markers = item.commentMarkerIDs
+        guard !markers.isEmpty else { return [] }
+        return (commentThreads[day.pageID] ?? []).filter { $0.root.markerRef.map(markers.contains) ?? false }
+    }
+
+    /// Whether an item has open comments, so its text stays as it is: the
+    /// comments hang on that text, and rewriting it would cut them loose.
+    /// Until the page's comments load, any highlight counts.
+    func hasComments(_ item: PriorityItem, in day: PriorityDay) -> Bool {
+        if item.commentMarkerIDs.isEmpty { return false }
+        guard commentThreads[day.pageID] != nil else { return true }
+        return !threads(on: item, in: day).isEmpty
     }
 
     // MARK: - Loading
@@ -110,8 +131,9 @@ final class PrioritiesModel {
                 shownIDs = index[start...].prefix(initialDayCount).map(\.pageID)
             }
             pages = pages.filter { known.contains($0.key) }
+            commentThreads = commentThreads.filter { known.contains($0.key) }
             await withTaskGroup(of: Void.self) { group in
-                for id in shownIDs { group.addTask { await self.loadPage(id) } }
+                for id in shownIDs { group.addTask { await self.loadDay(id) } }
             }
         } catch where error.isCancellation {
             cancelled = true
@@ -130,14 +152,21 @@ final class PrioritiesModel {
     func select(_ pageID: String) async {
         guard selectedID != pageID || shownIDs.count > 1 else { return }
         shownIDs = [pageID]
-        if pages[pageID] == nil { await loadPage(pageID) }
+        if pages[pageID] == nil { await loadDay(pageID) }
     }
 
     /// Adds the next earlier day below the ones shown.
     func loadPrevious() async {
         guard let ref = previousRef else { return }
         shownIDs.append(ref.pageID)
-        if pages[ref.pageID] == nil { await loadPage(ref.pageID) }
+        if pages[ref.pageID] == nil { await loadDay(ref.pageID) }
+    }
+
+    /// Loads a day's page and its comments side by side.
+    private func loadDay(_ pageID: String) async {
+        async let comments: Void = loadComments(pageID)
+        await loadPage(pageID)
+        await comments
     }
 
     private func loadPage(_ pageID: String) async {
@@ -152,6 +181,39 @@ final class PrioritiesModel {
         } catch {
             errorMessage = "Couldn't load \(ref.title): \(error.localizedDescription)"
         }
+    }
+
+    /// Loads a page's open inline comments, each with its replies, and then
+    /// who wrote them.
+    private func loadComments(_ pageID: String) async {
+        guard let client, let ref = index.first(where: { $0.pageID == pageID }) else { return }
+        do {
+            let roots = try await client.confluenceInlineComments(pageID: pageID)
+            let replies = try await withThrowingTaskGroup(of: (String, [ConfluenceComment]).self) { group in
+                for root in roots {
+                    group.addTask { (root.id, try await client.confluenceCommentReplies(commentID: root.id)) }
+                }
+                var replies: [String: [ConfluenceComment]] = [:]
+                for try await (id, found) in group { replies[id] = found }
+                return replies
+            }
+            let threads = roots.map { PriorityCommentThread(root: $0, replies: replies[$0.id] ?? []) }
+            // Names first, so the comments don't show up nameless.
+            await loadPeople(threads.flatMap { [$0.root] + $0.replies }.compactMap(\.authorID))
+            commentThreads[pageID] = threads
+        } catch where error.isCancellation {
+            return
+        } catch {
+            errorMessage = "Couldn't load the comments on \(ref.title): \(error.localizedDescription)"
+        }
+    }
+
+    /// Looks up the people not yet known. Without them, comments show no name.
+    private func loadPeople(_ accountIDs: [String]) async {
+        let missing = Set(accountIDs).subtracting(people.keys)
+        guard let client, !missing.isEmpty,
+              let found = try? await client.users(accountIDs: missing.sorted()) else { return }
+        for person in found { people[person.accountId] = person }
     }
 
     // MARK: - New day
@@ -175,7 +237,8 @@ final class PrioritiesModel {
             var items: [ADFNode] = []
             if let source {
                 let page = try await client.confluencePage(id: source.pageID)
-                items = page.document.taskItems.filter { !$0.isDone }.map { ADFNode.taskItem($0.content) }
+                // The comments stay on the source page, so their highlights don't come along.
+                items = page.document.taskItems.filter { !$0.isDone }.map { ADFNode.taskItem($0.contentWithoutComments) }
             }
 
             let monthTitle = PriorityNaming.monthTitle(for: date)
@@ -206,6 +269,7 @@ final class PrioritiesModel {
             let page = (try? await client.confluencePage(id: created.id)) ?? created
             insert(PriorityDayRef(pageID: page.id, title: title, day: date, monthFolderID: monthID))
             pages[page.id] = PriorityDay(page: page, day: date, siteURL: client.credentials.siteURL)
+            commentThreads[page.id] = []
             shownIDs = [page.id]
             return true
         } catch {
@@ -262,10 +326,11 @@ final class PrioritiesModel {
         return id
     }
 
-    /// Moves an item from an earlier day onto today's page, when today has one.
+    /// Moves an item from an earlier day onto today's page, when today has
+    /// one. Not one with comments, which can't move with it.
     func moveToToday(_ item: PriorityItem, from day: PriorityDay) async {
-        guard let today = todayRef, today.pageID != day.pageID else { return }
-        let moved = ADFNode.taskItem(item.content, done: item.isDone, id: item.id)
+        guard let today = todayRef, today.pageID != day.pageID, !hasComments(item, in: day) else { return }
+        let moved = ADFNode.taskItem(item.contentWithoutComments, done: item.isDone, id: item.id)
         write(page: today.pageID, itemID: item.id, message: "Moved from \(day.title): \(item.plainText.prefix(50))") { $0.appendingTaskItem([moved]) }
         await lastWrite?.value
         guard errorMessage == nil else { return }

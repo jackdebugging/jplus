@@ -220,18 +220,56 @@ final class PrioritiesModel {
     /// the thread's replies back so this one shows along with any posted
     /// since. Throws when the reply wasn't posted, so the box keeps its text.
     func reply(_ text: String, to thread: PriorityCommentThread, in day: PriorityDay) async throws {
-        let paragraphs = text.split(whereSeparator: \.isNewline)
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-            .map { ADFNode(type: "paragraph", content: ADFNode.inlineContent(from: $0, siteURL: siteURL)) }
-        guard let client, !paragraphs.isEmpty else { return }
-        let posted = try await client.replyToConfluenceComment(thread.root.id, document: ADFNode(type: "doc", content: paragraphs))
+        guard let client, let document = commentDocument(text) else { return }
+        let posted = try await client.replyToConfluenceComment(thread.root.id, document: document)
         // It's posted either way; if reading back fails, show it as sent.
         let replies = (try? await client.confluenceCommentReplies(commentID: thread.root.id)) ?? thread.replies + [posted]
         await loadPeople(replies.compactMap(\.authorID))
         commentThreads[day.pageID] = commentThreads[day.pageID]?.map {
             $0.id == thread.id ? PriorityCommentThread(root: $0.root, replies: replies) : $0
         }
+    }
+
+    /// Starts a comment thread on an item, as selecting its text and
+    /// commenting does in Confluence, which highlights that text on the page.
+    /// Then reads the page and its comments back, so both show. Throws when
+    /// the comment wasn't posted, so the box keeps its text.
+    func comment(_ text: String, on item: PriorityItem, in day: PriorityDay) async throws {
+        guard let client, let document = commentDocument(text) else { return }
+        // After the edits waiting to save, so the page has the text as shown.
+        await lastWrite?.value
+        let page = try await client.confluencePage(id: day.pageID)
+        guard let anchor = page.document.commentAnchor(forItem: item.id) else {
+            throw CommentError.noText
+        }
+        try await client.createConfluenceInlineComment(pageID: day.pageID, document: document, selection: anchor.text,
+                                                       matchIndex: anchor.index, matchCount: anchor.count)
+        // It's posted either way; the next load shows it if these fail.
+        if let page = try? await client.confluencePage(id: day.pageID) {
+            var updated = PriorityDay(page: page, day: day.day, siteURL: client.credentials.siteURL)
+            updated.document = pendingEdits.filter { $0.pageID == day.pageID }.reduce(updated.document) { $1.transform($0) }
+            pages[day.pageID] = updated
+        }
+        await loadComments(day.pageID)
+    }
+
+    enum CommentError: LocalizedError {
+        case noText
+
+        var errorDescription: String? {
+            switch self {
+            case .noText: "This priority has no text to comment on, or it has gone."
+            }
+        }
+    }
+
+    /// Typed text as a comment, a paragraph per line; nil when it's blank.
+    private func commentDocument(_ text: String) -> ADFNode? {
+        let paragraphs = text.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .map { ADFNode(type: "paragraph", content: ADFNode.inlineContent(from: $0, siteURL: siteURL)) }
+        return paragraphs.isEmpty ? nil : ADFNode(type: "doc", content: paragraphs)
     }
 
     // MARK: - New day

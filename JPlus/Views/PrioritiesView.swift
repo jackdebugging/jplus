@@ -591,13 +591,22 @@ private struct PriorityDayList: View {
     }
 }
 
+/// Where a comment is being typed under an item: a new thread on it, or a
+/// reply in one of its threads.
+private enum CommentSpot: Hashable {
+    case newThread
+    case reply(threadID: String)
+}
+
 /// One checkbox line, edited as in Reminders: a click or tap edits it (one
 /// on a link opens the link), the change saves when you're done, and Return
 /// saves it and starts a new priority below. On the Mac the caret goes where
-/// the click landed. On iOS it looks like a reminder (a round check, and a
-/// hairline beneath), and swiping it left shows Edit and Delete. Comments on
-/// it in Confluence show beneath its text, where they can be replied to, and
-/// while it has any its text can't be edited, since they hang on that text.
+/// the click landed, and the row is highlighted under the pointer and while
+/// its menu is open. On iOS it looks like a reminder (a round check, and a
+/// hairline beneath), and swiping it left shows Comment, Edit and Delete.
+/// Comments on it in Confluence show beneath its text, where they can be
+/// replied to, and while it has any its text can't be edited, since they
+/// hang on that text. Add Comment starts a thread on its text.
 private struct PriorityItemRow: View {
     let item: PriorityItem
     let day: PriorityDay
@@ -617,8 +626,8 @@ private struct PriorityItemRow: View {
     @State private var isEditing = false
     @State private var draft = ""
     @FocusState private var isFocused: Bool
-    /// The comment thread whose reply box is open.
-    @State private var replyingTo: String?
+    /// Where a comment box is open, if one is.
+    @State private var composing: CommentSpot?
     @Environment(\.textSizeScale) private var textScale
     @Environment(\.appFont) private var appFont
     @Environment(\.openURL) private var openURL
@@ -627,6 +636,9 @@ private struct PriorityItemRow: View {
     #if os(macOS)
     /// Where in the text the click that started editing landed, for the caret.
     @State private var editClick: CGPoint?
+    @State private var isHovered = false
+    /// The menu opened on this row, while it's open.
+    @State private var openMenu: ObjectIdentifier?
     #endif
 
     #if os(iOS)
@@ -644,6 +656,7 @@ private struct PriorityItemRow: View {
         #if os(iOS)
         VStack(alignment: .leading, spacing: 0) {
             line
+                .contextMenu { menu }
                 .padding(.vertical, 10)
             Divider()
                 .padding(.leading, Self.checkWidth + 12)
@@ -655,21 +668,44 @@ private struct PriorityItemRow: View {
                     if open { swipedOpenID = item.id } else if swipedOpenID == item.id { swipedOpenID = nil }
                 }
             ),
-            // Not while typing a reply, where a sideways drag selects text.
-            isEnabled: !isEditing && replyingTo == nil,
-            onEdit: swipeEdit,
-            onDelete: { model.remove(item, from: day) }
+            // Not while typing a comment, where a sideways drag selects text.
+            isEnabled: !isEditing && composing == nil,
+            actions: swipeActions
         ))
         #else
         line
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(isHovered || openMenu != nil ? Color.primary.opacity(0.06) : .clear, in: RoundedRectangle(cornerRadius: 6))
+            .contentShape(Rectangle())
+            .contextMenu { menu }
+            .onHover { isHovered = $0 }
+            // A right-click opens the menu under the pointer, so on this row
+            // when it's hovered; it stays highlighted until that menu closes.
+            .onReceive(NotificationCenter.default.publisher(for: NSMenu.didBeginTrackingNotification)) { note in
+                if isHovered, openMenu == nil, let menu = note.object as? NSMenu { openMenu = ObjectIdentifier(menu) }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSMenu.didEndTrackingNotification)) { note in
+                if let menu = note.object as? NSMenu, ObjectIdentifier(menu) == openMenu { openMenu = nil }
+            }
+            // The padding is only for the highlight; keep the row in line with the rest.
+            .padding(.horizontal, -6)
+            .padding(.vertical, -3)
         #endif
     }
 
     #if os(iOS)
-    /// The swipe's Edit, which an item with comments doesn't get.
-    private var swipeEdit: (() -> Void)? {
-        if hasComments { return nil }
-        return { beginEdit() }
+    /// Comment needs text to hang on, and an item with comments can't be edited.
+    private var swipeActions: [SwipeAction] {
+        var actions: [SwipeAction] = []
+        if item.canBeCommentedOn {
+            actions.append(SwipeAction(title: "Comment", tint: .blue, action: beginComment))
+        }
+        if !hasComments {
+            actions.append(SwipeAction(title: "Edit", tint: .green, action: beginEdit))
+        }
+        actions.append(SwipeAction(title: "Delete", tint: .red) { model.remove(item, from: day) })
+        return actions
     }
     #endif
 
@@ -679,44 +715,53 @@ private struct PriorityItemRow: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 text
-                if !threads.isEmpty {
-                    PriorityComments(threads: threads, day: day, model: model, replyingTo: $replyingTo)
+                if !threads.isEmpty || composing == .newThread {
+                    PriorityComments(threads: threads, item: item, day: day, model: model, composing: $composing)
                         // Faded with a finished item, as its text is, but not
-                        // while a reply is being typed.
-                        .opacity(item.isDone && replyingTo == nil ? 0.5 : 1)
+                        // while a comment is being typed.
+                        .opacity(item.isDone && composing == nil ? 0.5 : 1)
                 }
             }
             if isBusy {
                 ProgressView().controlSize(.mini)
             }
         }
-        .contextMenu {
-            #if os(macOS)
-            Button("Edit", systemImage: "pencil", action: beginEdit)
-                .disabled(hasComments)
-            Button("Delete", systemImage: "trash", role: .destructive) {
-                model.remove(item, from: day)
-            }
-            #else
-            Button("Edit…", systemImage: "pencil", action: beginEdit)
-                .disabled(hasComments)
-            Button(item.isDone ? "Mark Not Done" : "Mark Done", systemImage: item.isDone ? Self.openSymbol : Self.doneSymbol) {
-                model.setDone(!item.isDone, item: item, in: day)
-            }
-            if canMoveToToday {
-                Button("Move to Today", systemImage: "arrow.uturn.forward") {
-                    Task { await model.moveToToday(item, from: day) }
-                }
-            }
-            Button("Copy Text", systemImage: "doc.on.doc") {
-                Clipboard.copy(item.plainText)
-            }
-            Divider()
-            Button("Delete", systemImage: "trash", role: .destructive) {
-                model.remove(item, from: day)
-            }
-            #endif
+    }
+
+    @ViewBuilder
+    private var menu: some View {
+        #if os(macOS)
+        Button("Edit", systemImage: "pencil", action: beginEdit)
+            .disabled(hasComments || composing == .newThread)
+        addCommentButton
+        Button("Delete", systemImage: "trash", role: .destructive) {
+            model.remove(item, from: day)
         }
+        #else
+        Button("Edit…", systemImage: "pencil", action: beginEdit)
+            .disabled(hasComments || composing == .newThread)
+        addCommentButton
+        Button(item.isDone ? "Mark Not Done" : "Mark Done", systemImage: item.isDone ? Self.openSymbol : Self.doneSymbol) {
+            model.setDone(!item.isDone, item: item, in: day)
+        }
+        if canMoveToToday {
+            Button("Move to Today", systemImage: "arrow.uturn.forward") {
+                Task { await model.moveToToday(item, from: day) }
+            }
+        }
+        Button("Copy Text", systemImage: "doc.on.doc") {
+            Clipboard.copy(item.plainText)
+        }
+        Divider()
+        Button("Delete", systemImage: "trash", role: .destructive) {
+            model.remove(item, from: day)
+        }
+        #endif
+    }
+
+    private var addCommentButton: some View {
+        Button("Add Comment…", systemImage: "plus.bubble", action: beginComment)
+            .disabled(!item.canBeCommentedOn)
     }
 
     /// The item's text, or the field editing it.
@@ -812,11 +857,19 @@ private struct PriorityItemRow: View {
     #endif
 
     private func beginEdit() {
-        // New text would drop the highlight its comments hang on.
-        guard !hasComments else { return }
+        // New text would drop the highlight its comments hang on, or the
+        // one a comment being typed will.
+        guard !hasComments, composing != .newThread else { return }
         draft = item.plainText
         isEditing = true
         isFocused = true
+    }
+
+    /// Opens the box for a new comment, saving an edit first so the
+    /// comment hangs on the text as it now reads.
+    private func beginComment() {
+        commitEdit()
+        composing = .newThread
     }
 
     private func tapped(at location: CGPoint) {
@@ -872,17 +925,19 @@ private struct PriorityItemRow: View {
 /// An item's comment threads from Confluence, under its text: each comment
 /// with its replies indented beside a line, as on the issue page. Reply opens
 /// a box at the end of the thread; the comment can also open in Confluence.
+/// A new thread's box comes after the others.
 private struct PriorityComments: View {
     let threads: [PriorityCommentThread]
+    let item: PriorityItem
     let day: PriorityDay
     let model: PrioritiesModel
-    /// The thread whose reply box is open.
-    @Binding var replyingTo: String?
+    /// Where a comment box is open, if one is.
+    @Binding var composing: CommentSpot?
 
     @Environment(\.openURL) private var openURL
 
     private static let avatarSize: CGFloat = 22
-    static let replyAvatarSize: CGFloat = 18
+    private static let replyAvatarSize: CGFloat = 18
     private static let spacing: CGFloat = 8
     /// Where a comment's text starts, past its avatar.
     private static let textInset = avatarSize + spacing
@@ -890,14 +945,19 @@ private struct PriorityComments: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             ForEach(threads) { thread in
-                let isReplying = replyingTo == thread.id
+                let isReplying = composing == .reply(threadID: thread.id)
                 VStack(alignment: .leading, spacing: 8) {
                     comment(thread.root, avatarSize: Self.avatarSize)
                     if !thread.replies.isEmpty || isReplying {
                         VStack(alignment: .leading, spacing: 8) {
                             ForEach(thread.replies) { comment($0, avatarSize: Self.replyAvatarSize) }
                             if isReplying {
-                                PriorityReplyComposer(thread: thread, day: day, model: model) { replyingTo = nil }
+                                PriorityCommentComposer(
+                                    placeholder: replyPlaceholder(thread), postTitle: "Reply",
+                                    avatarSize: Self.replyAvatarSize, revealID: "reply-\(thread.id)"
+                                ) { text in
+                                    try await model.reply(text, to: thread, in: day)
+                                } onEnd: { composing = nil }
                             }
                         }
                         // The line runs down from the middle of the comment's
@@ -910,7 +970,7 @@ private struct PriorityComments: View {
                     }
                     if !isReplying {
                         HStack(spacing: 14) {
-                            Button("Reply", systemImage: "arrowshape.turn.up.left") { replyingTo = thread.id }
+                            Button("Reply", systemImage: "arrowshape.turn.up.left") { composing = .reply(threadID: thread.id) }
                                 .help("Reply in this thread")
                             if let url = thread.root.webURL(on: model.siteURL) {
                                 Button("Open in Confluence", systemImage: "arrow.up.forward.square") { openURL(url) }
@@ -924,10 +984,23 @@ private struct PriorityComments: View {
                     }
                 }
             }
+            if composing == .newThread {
+                PriorityCommentComposer(
+                    placeholder: "Add a comment…", postTitle: "Comment",
+                    avatarSize: Self.avatarSize, revealID: "comment-\(item.id)"
+                ) { text in
+                    try await model.comment(text, on: item, in: day)
+                } onEnd: { composing = nil }
+            }
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func replyPlaceholder(_ thread: PriorityCommentThread) -> String {
+        guard let name = thread.root.authorID.flatMap({ model.people[$0] })?.displayName else { return "Reply…" }
+        return "Reply to \(name)…"
     }
 
     private func comment(_ comment: ConfluenceComment, avatarSize: CGFloat) -> some View {
@@ -954,13 +1027,18 @@ private struct PriorityComments: View {
     }
 }
 
-/// The box for a reply at the end of a comment thread, as on the issue page.
-/// It takes plain text, with issue keys and links made into cards and links.
-/// ⌘↩ posts; posting or Cancel closes it.
-private struct PriorityReplyComposer: View {
-    let thread: PriorityCommentThread
-    let day: PriorityDay
-    let model: PrioritiesModel
+/// The box for a new comment or a reply, as on the issue page. It takes
+/// plain text, with issue keys and links made into cards and links. ⌘↩
+/// posts; posting or Cancel closes it.
+private struct PriorityCommentComposer: View {
+    let placeholder: String
+    /// The post button's title.
+    let postTitle: String
+    let avatarSize: CGFloat
+    /// Its id in the scroll view, scrolled to above the keyboard on iOS.
+    let revealID: String
+    /// Throws when it wasn't posted, so the box keeps the text.
+    let post: (String) async throws -> Void
     let onEnd: () -> Void
 
     @Environment(SessionStore.self) private var session
@@ -973,16 +1051,10 @@ private struct PriorityReplyComposer: View {
     @FocusState private var isFocused: Bool
 
     private var canPost: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isPosting }
-    private var revealID: String { "reply-\(thread.id)" }
-
-    private var placeholder: String {
-        guard let name = thread.root.authorID.flatMap({ model.people[$0] })?.displayName else { return "Reply…" }
-        return "Reply to \(name)…"
-    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
-            AvatarView(user: session.currentUser, size: PriorityComments.replyAvatarSize)
+            AvatarView(user: session.currentUser, size: avatarSize)
             VStack(alignment: .leading, spacing: 8) {
                 ZStack(alignment: .topLeading) {
                     TextEditor(text: $draft)
@@ -1003,11 +1075,11 @@ private struct PriorityReplyComposer: View {
                 .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(isFocused ? AnyShapeStyle(.tint) : AnyShapeStyle(.quaternary)))
 
                 HStack(spacing: 8) {
-                    Button("Reply") { Task { await post() } }
+                    Button(postTitle) { Task { await send() } }
                         .buttonStyle(.borderedProminent)
                         .disabled(!canPost)
                         .keyboardShortcut(isFocused ? KeyboardShortcut(.return, modifiers: .command) : nil)
-                        .help("Post reply (⌘↩)")
+                        .help("Post (⌘↩)")
                     Button("Cancel", action: onEnd)
                         .disabled(isPosting)
                     if isPosting { ProgressView().controlSize(.small) }
@@ -1026,12 +1098,12 @@ private struct PriorityReplyComposer: View {
         #endif
     }
 
-    private func post() async {
+    private func send() async {
         guard canPost else { return }
         isPosting = true
         error = nil
         do {
-            try await model.reply(draft, to: thread, in: day)
+            try await post(draft)
             draft = ""
             onEnd()
         } catch {
@@ -1201,30 +1273,33 @@ private func isReturnKeystroke(from old: String, to new: String) -> Bool {
     new.count == old.count + 1 && new.filter(\.isNewline).count == old.filter(\.isNewline).count + 1
 }
 
-/// Swiping a row left reveals Edit and Delete behind it, as in Mail; a swipe
+/// A button behind a row, revealed by swiping it.
+private struct SwipeAction {
+    let title: String
+    let tint: Color
+    let action: () -> Void
+}
+
+/// Swiping a row left reveals its actions behind it, as in Mail; a swipe
 /// back, a tap, scrolling or opening another row closes it.
 private struct SwipeToRevealActions: ViewModifier {
     @Binding var isOpen: Bool
     /// Off while the row is being edited, so drags select text.
     let isEnabled: Bool
-    /// Nil for a row that can't be edited, which shows only Delete.
-    let onEdit: (() -> Void)?
-    let onDelete: () -> Void
+    /// Left to right, the last at the row's edge.
+    let actions: [SwipeAction]
 
     @State private var offset: CGFloat = 0
     @State private var startOffset: CGFloat = 0
     private static let buttonWidth: CGFloat = 74
-    private var openOffset: CGFloat { -Self.buttonWidth * (onEdit == nil ? 1 : 2) }
+    private var openOffset: CGFloat { -Self.buttonWidth * CGFloat(actions.count) }
 
     func body(content: Content) -> some View {
         content
             .offset(x: offset)
             .background(alignment: .trailing) {
                 HStack(spacing: 0) {
-                    if let onEdit {
-                        button("Edit", tint: .green, action: onEdit)
-                    }
-                    button("Delete", tint: .red, action: onDelete)
+                    ForEach(actions, id: \.title) { button($0.title, tint: $0.tint, action: $0.action) }
                 }
                 .frame(width: max(0, -offset))
                 .clipped()

@@ -16,6 +16,17 @@ nonisolated struct PriorityItem: Identifiable, Hashable, Sendable {
     /// The content without its comment highlights, for a copy on another
     /// page, where those comments don't exist.
     var contentWithoutComments: [ADFNode] { content.map { $0.removingInlineComments() } }
+
+    /// Whether it has text a new comment can hang on, not only cards or mentions.
+    var canBeCommentedOn: Bool { ADFNode.taskItem(content, id: id).commentAnchor(forItem: id) != nil }
+}
+
+/// The text a new inline comment highlights. Confluence finds it by
+/// matching: it's the `index`th (from 0) of `count` copies on the page.
+nonisolated struct PriorityCommentAnchor: Hashable, Sendable {
+    let text: String
+    let index: Int
+    let count: Int
 }
 
 /// An inline comment on a day's page, with the replies under it.
@@ -191,6 +202,39 @@ nonisolated extension ADFNode {
     var inlineCommentIDs: [String] {
         let own = (marks ?? []).filter(\.isInlineComment).compactMap { $0.attr("id") }
         return own + children.flatMap(\.inlineCommentIDs)
+    }
+
+    /// Where a new comment on the task item `id` hangs: its longest run of
+    /// text not yet commented on (or one that is, failing that), without
+    /// the spaces and punctuation around it. Nil when the item has no text.
+    func commentAnchor(forItem id: String) -> PriorityCommentAnchor? {
+        let runs = textRuns(in: nil)
+        let candidates = runs.indices.compactMap { index -> (run: Int, range: Range<String.Index>)? in
+            let run = runs[index]
+            guard run.itemID == id,
+                  let first = run.text.firstIndex(where: { !$0.isWhitespace && !$0.isPunctuation }),
+                  let last = run.text.lastIndex(where: { !$0.isWhitespace && !$0.isPunctuation })
+            else { return nil }
+            return (index, first..<run.text.index(after: last))
+        }
+        func preference(_ candidate: (run: Int, range: Range<String.Index>)) -> (Int, Int) {
+            (runs[candidate.run].isCommented ? 0 : 1, runs[candidate.run].text[candidate.range].count)
+        }
+        guard let chosen = candidates.max(by: { preference($0) < preference($1) }) else { return nil }
+        let text = String(runs[chosen.run].text[chosen.range])
+        let before = runs[..<chosen.run].reduce(0) { $0 + $1.text.ranges(of: text).count }
+            + runs[chosen.run].text.ranges(of: text).filter { $0.lowerBound < chosen.range.lowerBound }.count
+        let count = runs.reduce(0) { $0 + $1.text.ranges(of: text).count }
+        return PriorityCommentAnchor(text: text, index: before, count: count)
+    }
+
+    /// The document's text nodes in reading order, each with the task item it's in.
+    private func textRuns(in itemID: String?) -> [(itemID: String?, text: String, isCommented: Bool)] {
+        if type == "text", let text {
+            return [(itemID, text, (marks ?? []).contains(where: \.isInlineComment))]
+        }
+        let itemID = type == "taskItem" ? attr("localId") : itemID
+        return children.flatMap { $0.textRuns(in: itemID) }
     }
 
     /// A copy without inline comment highlights; other marks stay.

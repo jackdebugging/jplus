@@ -217,17 +217,39 @@ nonisolated final class DemoServer: @unchecked Sendable {
             return ok(["results": state.pageComments.filter { $0.parentID == id }.map(pageCommentJSON)])
         }
         if match(method, parts, "POST wiki/api/v2/inline-comments") != nil {
-            // Replies only; the app doesn't start threads, which would mean highlighting page text.
-            guard let parentID = json["parentCommentId"] as? String,
-                  let parent = state.pageComments.first(where: { $0.id == parentID }) else {
-                return error(400, "A parent comment is required.")
-            }
             let value = (json["body"] as? [String: Any])?["value"] as? String ?? ""
             let body = (try? JSONSerialization.jsonObject(with: Data(value.utf8))) as? [String: Any] ?? ADF.doc([])
-            let reply = DemoPageComment(id: newID(), pageID: parent.pageID, author: me, body: body, created: Date(),
-                                        markerRef: nil, parentID: parentID)
-            state.pageComments.append(reply)
-            return ok(pageCommentJSON(reply), status: 201)
+            if let parentID = json["parentCommentId"] as? String {
+                guard let parent = state.pageComments.first(where: { $0.id == parentID }) else {
+                    return error(404, "Parent comment not found.")
+                }
+                let reply = DemoPageComment(id: newID(), pageID: parent.pageID, author: me, body: body, created: Date(),
+                                            markerRef: nil, parentID: parentID)
+                state.pageComments.append(reply)
+                return ok(pageCommentJSON(reply), status: 201)
+            }
+            // A new thread highlights the chosen copy of the selected text, as Confluence does.
+            guard let pageID = json["pageId"] as? String,
+                  let index = state.pages.firstIndex(where: { $0.id == pageID }),
+                  let selection = json["inlineCommentProperties"] as? [String: Any],
+                  let text = selection["textSelection"] as? String, !text.isEmpty,
+                  let matchCount = selection["textSelectionMatchCount"] as? Int,
+                  let matchIndex = selection["textSelectionMatchIndex"] as? Int,
+                  let page = (try? JSONSerialization.jsonObject(with: Data(state.pages[index].body.utf8))) as? ADF.Node
+            else { return error(400, "A page and the text to highlight, or a parent comment, are required.") }
+            let marker = UUID().uuidString.lowercased()
+            var seen = 0
+            let highlighted = highlighting(text, at: matchIndex, marker: marker, in: page, seen: &seen)
+            guard seen == matchCount, matchIndex < matchCount, let document = highlighted.first,
+                  let data = try? JSONSerialization.data(withJSONObject: document, options: [.withoutEscapingSlashes]) else {
+                return error(400, "The selected text appears \(seen) times on the page, not \(matchCount).")
+            }
+            state.pages[index].body = String(decoding: data, as: UTF8.self)
+            state.pages[index].version += 1
+            let comment = DemoPageComment(id: newID(), pageID: pageID, author: me, body: body, created: Date(),
+                                          markerRef: marker, parentID: nil)
+            state.pageComments.append(comment)
+            return ok(pageCommentJSON(comment), status: 201)
         }
         if match(method, parts, "POST wiki/api/v2/pages") != nil {
             let body = (json["body"] as? [String: Any])?["value"] as? String ?? "{\"type\":\"doc\",\"version\":1,\"content\":[]}"
@@ -415,6 +437,39 @@ nonisolated final class DemoServer: @unchecked Sendable {
             result["parentType"] = "space"
         }
         return result
+    }
+
+    /// `node` with the `target`th copy of `selection` among its text nodes
+    /// highlighted for the inline comment `marker`; `seen` counts the copies
+    /// passed. A text node holding the copy splits around it.
+    private func highlighting(_ selection: String, at target: Int, marker: String, in node: ADF.Node, seen: inout Int) -> [ADF.Node] {
+        if node["type"] as? String == "text", let text = node["text"] as? String {
+            let ranges = text.ranges(of: selection)
+            let hit = ranges.indices.first { seen + $0 == target }
+            seen += ranges.count
+            guard let hit else { return [node] }
+            let range = ranges[hit]
+            var pieces: [ADF.Node] = []
+            if range.lowerBound > text.startIndex {
+                var before = node
+                before["text"] = String(text[..<range.lowerBound])
+                pieces.append(before)
+            }
+            var match = node
+            match["text"] = selection
+            match["marks"] = (node["marks"] as? [ADF.Node] ?? []) + [["type": "annotation", "attrs": ["annotationType": "inlineComment", "id": marker]]]
+            pieces.append(match)
+            if range.upperBound < text.endIndex {
+                var after = node
+                after["text"] = String(text[range.upperBound...])
+                pieces.append(after)
+            }
+            return pieces
+        }
+        guard let content = node["content"] as? [ADF.Node] else { return [node] }
+        var copy = node
+        copy["content"] = content.flatMap { highlighting(selection, at: target, marker: marker, in: $0, seen: &seen) }
+        return [copy]
     }
 
     private func pageCommentJSON(_ comment: DemoPageComment) -> [String: Any] {

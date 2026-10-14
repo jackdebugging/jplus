@@ -69,6 +69,22 @@ extension JiraClient {
         ])
     }
 
+    /// Starts an inline comment thread, highlighting text on the page:
+    /// the `matchIndex`th (from 0) of the page's `matchCount` copies of
+    /// `selection`. Confluence adds the highlight to the page's body.
+    @discardableResult
+    func createConfluenceInlineComment(pageID: String, document: ADFNode, selection: String, matchIndex: Int, matchCount: Int) async throws -> ConfluenceComment {
+        try await post("/wiki/api/v2/inline-comments", json: [
+            "pageId": pageID,
+            "body": try Self.confluenceBody(document),
+            "inlineCommentProperties": [
+                "textSelection": selection,
+                "textSelectionMatchCount": matchCount,
+                "textSelectionMatchIndex": matchIndex,
+            ],
+        ])
+    }
+
     func createConfluenceFolder(title: String, spaceID: String, parentID: String) async throws -> ConfluenceFolder {
         try await post("/wiki/api/v2/folders", json: [
             "spaceId": spaceID,

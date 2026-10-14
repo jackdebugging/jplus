@@ -6,6 +6,9 @@ struct JPlusApp: App {
     @State private var settings = SettingsStore()
     @AppStorage(TextSize.storageKey) private var textSizeStep = TextSize.standardStep
     @AppStorage(AppFont.storageKey) private var appFont = AppFont.standard
+    #if os(macOS)
+    @State private var updater = AppUpdater()
+    #endif
 
     init() {
         AppFont.registerBundledFonts()
@@ -26,9 +29,15 @@ struct JPlusApp: App {
                 #if os(macOS)
                 .frame(minWidth: 480, minHeight: 360)
                 .background(WindowFrameAutosave(name: "JPlusMainWindow"))
+                .environment(updater)
                 #endif
         }
         .commands {
+            #if os(macOS)
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates…") { updater.checkForUpdates() }
+            }
+            #endif
             CommandGroup(replacing: .newItem) {
                 Button("New Ticket…") {
                     NotificationCenter.default.post(name: .jplusNewTicket, object: nil)
@@ -72,6 +81,7 @@ struct JPlusApp: App {
             SettingsView()
                 .environment(settings)
                 .environment(session)
+                .environment(updater)
         }
         #endif
     }

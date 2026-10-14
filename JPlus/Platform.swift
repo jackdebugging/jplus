@@ -239,12 +239,13 @@ enum AppInfo {
     /// for an Atlassian product.
     static let trademarkNotice = "JPlus is an independent app, not affiliated with or endorsed by Atlassian. Jira and Confluence are trademarks of Atlassian."
 
-    /// "1.0.0 (41)".
+    /// "1.0.0 (41)" on iPhone and iPad. The Mac's build number is its version
+    /// (Sparkle compares build numbers), so there it's just "1.0.0".
     static var version: String {
         let info = Bundle.main.infoDictionary
         let short = info?["CFBundleShortVersionString"] as? String ?? "?"
         let build = info?["CFBundleVersion"] as? String ?? "?"
-        return "\(short) (\(build))"
+        return build == short ? short : "\(short) (\(build))"
     }
 }
 

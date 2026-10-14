@@ -1,6 +1,10 @@
 import SwiftUI
 
 struct SettingsView: View {
+    #if os(macOS)
+    @Environment(AppUpdater.self) private var updater: AppUpdater?
+    #endif
+
     var body: some View {
         Form {
             TextSizeSection()
@@ -22,6 +26,14 @@ struct SettingsView: View {
             StorageSection()
             Section {
                 LabeledContent("Version", value: AppInfo.version)
+                #if os(macOS)
+                if let updater {
+                    Toggle("Check for updates automatically", isOn: Binding(
+                        get: { updater.checksAutomatically },
+                        set: { updater.checksAutomatically = $0 }
+                    ))
+                }
+                #endif
             } header: {
                 Text("About")
             } footer: {

@@ -7,6 +7,9 @@ struct HomeView: View {
     @Environment(SessionStore.self) private var session
     @Environment(\.openAppSettings) private var openSettings
     @Environment(\.openURL) private var openURL
+    #if os(macOS)
+    @Environment(AppUpdater.self) private var updater: AppUpdater?
+    #endif
     let user: JiraUser
 
     enum SidebarItem: Hashable {
@@ -297,6 +300,9 @@ struct HomeView: View {
                     openURL(client.credentials.siteURL)
                 }
             }
+            #if os(macOS)
+            Button("Check for Updates…", systemImage: "arrow.down.circle") { updater?.checkForUpdates() }
+            #endif
             Divider()
             Button("Switch Account…", systemImage: "person.2") { session.signOut() }
         } label: {
@@ -316,9 +322,16 @@ struct HomeView: View {
                 }
                 .layoutPriority(1)
                 Spacer(minLength: 4)
+                #if os(macOS)
+                if updater?.availableVersion != nil {
+                    // Room for the update button, laid over the menu below.
+                    Color.clear.frame(width: 22, height: 22)
+                }
+                #endif
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.secondary)
+                    .frame(width: 10)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
@@ -332,10 +345,41 @@ struct HomeView: View {
         .menuStyle(.button)
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
+        #if os(macOS)
+        .overlay(alignment: .trailing) {
+            // Over the menu rather than in its label, so it gets its own
+            // clicks; spaced like the label's chevron and padding.
+            HStack(spacing: 10) {
+                updateButton
+                Color.clear.frame(width: 10)
+            }
+            .padding(.trailing, 10)
+        }
+        #endif
         .padding(.horizontal, 8)
         .padding(.vertical, 8)
         .help("Signed in as \(user.displayName)")
     }
+
+    #if os(macOS)
+    /// Shown once Sparkle has a newer version: installs it and relaunches.
+    @ViewBuilder private var updateButton: some View {
+        if let version = updater?.availableVersion {
+            Button {
+                updater?.installUpdate()
+            } label: {
+                Image(systemName: "arrow.down.circle.fill")
+                    .font(.system(size: 17))
+                    .foregroundStyle(.tint)
+                    .frame(width: 22, height: 22)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .help("Update to JPlus \(version) and relaunch")
+            .accessibilityLabel("Update to JPlus \(version)")
+        }
+    }
+    #endif
 
     /// Load More / View All / Collapse under the recent issues.
     @ViewBuilder

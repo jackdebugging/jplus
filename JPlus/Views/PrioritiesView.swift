@@ -37,7 +37,7 @@ struct PrioritiesView: View {
         }
     }
     @State private var model = PrioritiesModel()
-    @State private var newText = ""
+    @State private var drafts = PriorityDrafts()
     @State private var isChoosingFolder = false
     @State private var folderDraft = ""
     /// Looking for the team's folder by name, when none is set.
@@ -47,15 +47,10 @@ struct PrioritiesView: View {
     @State private var isPickingNewDay = false
     @State private var newDayDate = Date()
     @State private var copiesOpenItems = false
-    @FocusState private var isAddFieldFocused: Bool
     /// Where a new priority is being typed: under the one Return was pressed in.
     @State private var newItemSpot: NewItemSpot?
     /// The item swiped open to show its actions, on iOS.
     @State private var swipedOpenID: String?
-    #if os(iOS)
-    @State private var addFieldHeight: CGFloat = 0
-    private static let addFieldID = "addField"
-    #endif
 
     private var folderID: String? { PriorityNaming.folderID(from: folderInput) }
 
@@ -198,7 +193,11 @@ struct PrioritiesView: View {
     private var days: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                VStack(alignment: .leading, spacing: 28) {
+                // Lazy, so only the days on screen or near it are built and
+                // laid out. A day far off screen is let go and built afresh
+                // when it comes back, which is why what's being typed in one
+                // lives in `drafts`.
+                LazyVStack(alignment: .leading, spacing: 28) {
                     if let message = model.errorMessage {
                         Label(message, systemImage: "exclamationmark.triangle")
                             .scaledFont(.callout)
@@ -233,13 +232,8 @@ struct PrioritiesView: View {
                 .padding(24)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .environment(drafts)
             #if os(iOS)
-            // The keyboard doesn't make room as a new priority grows a line, so
-            // keep the field's last line in view.
-            .onChange(of: addFieldHeight) { old, new in
-                guard isAddFieldFocused, new > old else { return }
-                withAnimation { proxy.scrollTo(Self.addFieldID, anchor: .bottom) }
-            }
             // Scrolling closes a row swiped open, as in Mail.
             .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, _ in
                 if swipedOpenID != nil { swipedOpenID = nil }
@@ -309,7 +303,7 @@ struct PrioritiesView: View {
                 }
             }
             if isSelected {
-                addField(for: day)
+                AddPriorityField(day: day, model: model)
             }
         }
     }
@@ -359,39 +353,6 @@ struct PrioritiesView: View {
         }
         return named ? longDate(day) : day.formatted(.dateTime.month(.wide).day().year())
     }
-
-    /// Reminders' "New Reminder" row, typed into in place.
-    private func addField(for day: PriorityDay) -> some View {
-        HStack(alignment: .center, spacing: 12) {
-            Image(systemName: "plus.circle.fill")
-                .scaledFont(.title3)
-                .foregroundStyle(Color.accentColor)
-                .frame(width: PriorityItemRow.checkWidth)
-            // Return adds it and stays for the next; the checkmark in the
-            // navigation bar adds it and closes the keyboard.
-            TextField("New Priority", text: $newText, axis: .vertical)
-                .lineLimit(1...4)
-                .focused($isAddFieldFocused)
-                .onChange(of: newText) { old, new in
-                    guard isReturnKeystroke(from: old, to: new) else { return }
-                    newText = old
-                    add(to: day)
-                }
-        }
-        .padding(.vertical, 10)
-        .id(Self.addFieldID)
-        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { addFieldHeight = $0 }
-        .toolbar {
-            if isAddFieldFocused {
-                ToolbarItem(placement: .confirmationAction) {
-                    DoneEditingButton {
-                        add(to: day, refocus: false)
-                        isAddFieldFocused = false
-                    }
-                }
-            }
-        }
-    }
     #else
     private static let rowSpacing: CGFloat = 6
 
@@ -418,28 +379,7 @@ struct PrioritiesView: View {
                 .help("Open \(day.title) in Confluence")
         }
     }
-
-    private func addField(for day: PriorityDay) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: "plus")
-                .foregroundStyle(.secondary)
-                .frame(width: 16)
-            TextField("Add a priority…", text: $newText, axis: .vertical)
-                .textFieldStyle(.plain)
-                .lineLimit(1...4)
-                .focused($isAddFieldFocused)
-                .onSubmit { add(to: day) }
-        }
-        .padding(.top, 2)
-    }
     #endif
-
-    /// `refocus` puts the cursor back in the field for the next entry.
-    private func add(to day: PriorityDay, refocus: Bool = true) {
-        guard model.add(newText, to: day) != nil else { return }
-        newText = ""
-        if refocus { isAddFieldFocused = true }
-    }
 
     // MARK: - New day
 
@@ -598,6 +538,19 @@ private enum CommentSpot: Hashable {
     case reply(threadID: String)
 }
 
+/// What's being typed in the days and not yet saved. The screen keeps it
+/// rather than the days: the list lets go of a day far off screen and
+/// builds it afresh when it's back, so it would otherwise be lost.
+@Observable
+private final class PriorityDrafts {
+    /// The new priority in the add field.
+    var newPriority = ""
+    /// The comment box open on each item, by item id.
+    var composing: [String: CommentSpot] = [:]
+    /// What's typed in each comment box, by the box's id.
+    var comments: [String: String] = [:]
+}
+
 /// One checkbox line, edited as in Reminders: a click or tap edits it (one
 /// on a link opens the link), the change saves when you're done, and Return
 /// saves it and starts a new priority below. On the Mac the caret goes where
@@ -626,8 +579,10 @@ private struct PriorityItemRow: View {
     @State private var isEditing = false
     @State private var draft = ""
     @FocusState private var isFocused: Bool
-    /// Where a comment box is open, if one is.
-    @State private var composing: CommentSpot?
+    @Environment(PriorityDrafts.self) private var drafts
+    /// The comment box opened since this row was built, which takes the
+    /// focus; one that's only built again, with its day, doesn't.
+    @State private var openedBox: CommentSpot?
     @Environment(\.textSizeScale) private var textScale
     @Environment(\.appFont) private var appFont
     @Environment(\.openURL) private var openURL
@@ -648,9 +603,6 @@ private struct PriorityItemRow: View {
     private static let openSymbol = "square"
     private static let doneSymbol = "checkmark.square"
     #endif
-
-    /// Width of the check column, which the add row lines up with.
-    static let checkWidth: CGFloat = 26
 
     var body: some View {
         #if os(iOS)
@@ -709,21 +661,27 @@ private struct PriorityItemRow: View {
     }
     #endif
 
+    /// The check and text on one line, and the comments under the text.
+    /// The comments stay out of that line's stack: in it, lining the check
+    /// up with the text's first baseline searched them for one too, and the
+    /// stack measured them again at every width it tried, so each change to
+    /// the page laid out every comment several times over.
     private var line: some View {
-        HStack(alignment: .firstTextBaseline, spacing: Self.lineSpacing) {
-            check
-
-            VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: Self.lineSpacing) {
+                check
                 text
-                if !threads.isEmpty || composing == .newThread {
-                    PriorityComments(threads: threads, item: item, day: day, model: model, composing: $composing)
-                        // Faded with a finished item, as its text is, but not
-                        // while a comment is being typed.
-                        .opacity(item.isDone && composing == nil ? 0.5 : 1)
+                if isBusy {
+                    ProgressView().controlSize(.mini)
                 }
             }
-            if isBusy {
-                ProgressView().controlSize(.mini)
+            if !threads.isEmpty || composing == .newThread {
+                PriorityComments(threads: threads, item: item, day: day, model: model,
+                                 composing: Binding(get: { composing }, set: { setComposing($0) }), focusing: openedBox)
+                    // Faded with a finished item, as its text is, but not
+                    // while a comment is being typed.
+                    .opacity(item.isDone && composing == nil ? 0.5 : 1)
+                    .padding(.leading, Self.checkWidth + Self.lineSpacing)
             }
         }
     }
@@ -819,6 +777,8 @@ private struct PriorityItemRow: View {
     }
 
     #if os(iOS)
+    /// Width of the check column, which the add row and comments line up with.
+    static let checkWidth: CGFloat = 26
     static let lineSpacing: CGFloat = 12
     /// Reminders greys finished items without striking them through.
     private static let strikesDone = false
@@ -841,6 +801,9 @@ private struct PriorityItemRow: View {
         .accessibilityAddTraits(.isToggle)
     }
     #else
+    /// Width of the check column (the checkbox's own), which the add row
+    /// and comments line up with.
+    static let checkWidth: CGFloat = 16
     static let lineSpacing: CGFloat = 8
     private static let strikesDone = true
 
@@ -851,6 +814,7 @@ private struct PriorityItemRow: View {
         ))
         .checkboxToggleStyle()
         .labelsHidden()
+        .frame(width: Self.checkWidth)
         .disabled(isBusy)
         .accessibilityLabel(item.plainText)
     }
@@ -869,7 +833,17 @@ private struct PriorityItemRow: View {
     /// comment hangs on the text as it now reads.
     private func beginComment() {
         commitEdit()
-        composing = .newThread
+        setComposing(.newThread)
+    }
+
+    /// The comment box open on it, if one is, kept in the drafts so it
+    /// stays open when the row is built again.
+    private var composing: CommentSpot? { drafts.composing[item.id] }
+
+    /// Opens a comment box, which takes the focus, or closes it with nil.
+    private func setComposing(_ spot: CommentSpot?) {
+        drafts.composing[item.id] = spot
+        openedBox = spot
     }
 
     private func tapped(at location: CGPoint) {
@@ -933,6 +907,8 @@ private struct PriorityComments: View {
     let model: PrioritiesModel
     /// Where a comment box is open, if one is.
     @Binding var composing: CommentSpot?
+    /// The box just opened, which takes the focus.
+    let focusing: CommentSpot?
 
     @Environment(\.openURL) private var openURL
 
@@ -954,7 +930,8 @@ private struct PriorityComments: View {
                             if isReplying {
                                 PriorityCommentComposer(
                                     placeholder: replyPlaceholder(thread), postTitle: "Reply",
-                                    avatarSize: Self.replyAvatarSize, revealID: "reply-\(thread.id)"
+                                    avatarSize: Self.replyAvatarSize, revealID: "reply-\(thread.id)",
+                                    takesFocus: focusing == .reply(threadID: thread.id)
                                 ) { text in
                                     try await model.reply(text, to: thread, in: day)
                                 } onEnd: { composing = nil }
@@ -987,7 +964,8 @@ private struct PriorityComments: View {
             if composing == .newThread {
                 PriorityCommentComposer(
                     placeholder: "Add a comment…", postTitle: "Comment",
-                    avatarSize: Self.avatarSize, revealID: "comment-\(item.id)"
+                    avatarSize: Self.avatarSize, revealID: "comment-\(item.id)",
+                    takesFocus: focusing == .newThread
                 ) { text in
                     try await model.comment(text, on: item, in: day)
                 } onEnd: { composing = nil }
@@ -1035,20 +1013,29 @@ private struct PriorityCommentComposer: View {
     /// The post button's title.
     let postTitle: String
     let avatarSize: CGFloat
-    /// Its id in the scroll view, scrolled to above the keyboard on iOS.
+    /// Its id: in the scroll view, where iOS scrolls it above the keyboard,
+    /// and in the drafts.
     let revealID: String
+    /// It was just opened, rather than built again with its day.
+    let takesFocus: Bool
     /// Throws when it wasn't posted, so the box keeps the text.
     let post: (String) async throws -> Void
     let onEnd: () -> Void
 
     @Environment(SessionStore.self) private var session
+    @Environment(PriorityDrafts.self) private var drafts
     #if os(iOS)
     @Environment(\.revealInPriorities) private var reveal
     #endif
-    @State private var draft = ""
     @State private var isPosting = false
     @State private var error: String?
     @FocusState private var isFocused: Bool
+
+    /// What's typed, kept in the drafts so it outlasts the box being built again.
+    private var draft: String {
+        get { drafts.comments[revealID] ?? "" }
+        nonmutating set { drafts.comments[revealID] = newValue.isEmpty ? nil : newValue }
+    }
 
     private var canPost: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isPosting }
 
@@ -1057,7 +1044,7 @@ private struct PriorityCommentComposer: View {
             AvatarView(user: session.currentUser, size: avatarSize)
             VStack(alignment: .leading, spacing: 8) {
                 ZStack(alignment: .topLeading) {
-                    TextEditor(text: $draft)
+                    TextEditor(text: Binding(get: { draft }, set: { draft = $0 }))
                         .scrollContentBackground(.hidden)
                         .focused($isFocused)
                         .disabled(isPosting)
@@ -1080,8 +1067,11 @@ private struct PriorityCommentComposer: View {
                         .disabled(!canPost)
                         .keyboardShortcut(isFocused ? KeyboardShortcut(.return, modifiers: .command) : nil)
                         .help("Post (⌘↩)")
-                    Button("Cancel", action: onEnd)
-                        .disabled(isPosting)
+                    Button("Cancel") {
+                        draft = ""
+                        onEnd()
+                    }
+                    .disabled(isPosting)
                     if isPosting { ProgressView().controlSize(.small) }
                 }
                 .controlSize(.small)
@@ -1089,7 +1079,7 @@ private struct PriorityCommentComposer: View {
             }
         }
         .id(revealID)
-        .onAppear { isFocused = true }
+        .onAppear { if takesFocus { isFocused = true } }
         #if os(iOS)
         // iOS keeps only the caret above the keyboard; bring up the buttons too.
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) { _ in
@@ -1175,6 +1165,87 @@ private struct EndsEditingOnClickOutside: ViewModifier {
 
 #endif
 
+/// The field at the end of the selected day for a new priority. Return adds
+/// it and stays for the next. What's typed sits in the drafts, which only
+/// this field reads, so a keystroke updates the field alone instead of
+/// every day, item and comment.
+private struct AddPriorityField: View {
+    let day: PriorityDay
+    let model: PrioritiesModel
+
+    @Environment(PriorityDrafts.self) private var drafts
+    @FocusState private var isFocused: Bool
+    #if os(iOS)
+    @Environment(\.revealInPriorities) private var reveal
+    private static let revealID = "addField"
+    #endif
+
+    private var text: String {
+        get { drafts.newPriority }
+        nonmutating set { drafts.newPriority = newValue }
+    }
+
+    #if os(iOS)
+    /// Reminders' "New Reminder" row, typed into in place.
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: "plus.circle.fill")
+                .scaledFont(.title3)
+                .foregroundStyle(Color.accentColor)
+                .frame(width: PriorityItemRow.checkWidth)
+            // Return adds it and stays for the next; the checkmark in the
+            // navigation bar adds it and closes the keyboard.
+            TextField("New Priority", text: Bindable(drafts).newPriority, axis: .vertical)
+                .lineLimit(1...4)
+                .focused($isFocused)
+                .onChange(of: text) { old, new in
+                    guard isReturnKeystroke(from: old, to: new) else { return }
+                    text = old
+                    add()
+                }
+        }
+        .padding(.vertical, 10)
+        .id(Self.revealID)
+        // The keyboard doesn't make room as a new priority grows a line, so
+        // keep the field's last line in view.
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { old, new in
+            if isFocused, new > old { reveal(Self.revealID) }
+        }
+        .toolbar {
+            if isFocused {
+                ToolbarItem(placement: .confirmationAction) {
+                    DoneEditingButton {
+                        add(refocus: false)
+                        isFocused = false
+                    }
+                }
+            }
+        }
+    }
+    #else
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "plus")
+                .foregroundStyle(.secondary)
+                .frame(width: PriorityItemRow.checkWidth)
+            TextField("Add a priority…", text: Bindable(drafts).newPriority, axis: .vertical)
+                .textFieldStyle(.plain)
+                .lineLimit(1...4)
+                .focused($isFocused)
+                .onSubmit { add() }
+        }
+        .padding(.top, 2)
+    }
+    #endif
+
+    /// `refocus` puts the cursor back in the field for the next entry.
+    private func add(refocus: Bool = true) {
+        guard model.add(text, to: day) != nil else { return }
+        text = ""
+        if refocus { isFocused = true }
+    }
+}
+
 /// A priority being typed under another, as after Return in Reminders.
 /// Return adds it and starts the next one below; blank text isn't added. On
 /// the Mac, Esc or a click elsewhere drops it unsaved; on iOS, leaving it
@@ -1240,6 +1311,8 @@ private struct NewPriorityRow: View {
         }
         // After the Return that made this row has finished with the field it came from.
         .onAppear { DispatchQueue.main.async { isFocused = true } }
+        // Let go with its day, far off screen, it's left as when the focus goes.
+        .onDisappear(perform: end)
     }
 
     #if os(iOS)

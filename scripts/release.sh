@@ -80,7 +80,7 @@ cp "$DMG" "$LATEST"
 echo "Writing release notes…"
 PREVIOUS=$(git describe --tags --abbrev=0 2>/dev/null || true)
 if [[ -n "$PREVIOUS" ]]; then
-    CHANGES=$(printf 'Changes since %s:\n\n' "$PREVIOUS"; git log --no-merges --pretty='- %s' "$PREVIOUS..HEAD")
+    CHANGES=$(printf 'Changes since %s:\n\n' "$PREVIOUS"; git log --no-merges --invert-grep --grep='^Bump the version' --pretty='- %s' "$PREVIOUS..HEAD")
 else
     CHANGES="First release."
 fi

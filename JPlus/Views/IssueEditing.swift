@@ -205,16 +205,20 @@ struct IssueStatusButton: View {
         .onHover { isHovered = $0 }
         .help("Change status")
         .popover(isPresented: $isPicking, arrowEdge: .bottom) {
-            TransitionPicker(issue: issue, isPresented: $isPicking, onChanged: onChanged)
+            TransitionPicker(issueKey: issue.key, currentStatus: issue.fields.status.name, isPresented: $isPicking) { _ in
+                await onChanged()
+            }
         }
     }
 }
 
-/// The statuses the workflow allows next. Picking one moves the issue at once.
-private struct TransitionPicker: View {
-    let issue: JiraIssue
+/// The statuses the workflow allows next. Picking one moves the issue at
+/// once, then calls `onMoved` with the status it moved to.
+struct TransitionPicker: View {
+    let issueKey: String
+    let currentStatus: String
     @Binding var isPresented: Bool
-    let onChanged: () async -> Void
+    let onMoved: (JiraIssue.Status) async -> Void
 
     @Environment(SessionStore.self) private var session
     @State private var transitions: [JiraTransition]?
@@ -224,7 +228,7 @@ private struct TransitionPicker: View {
 
     /// Leaves out moves to the status the issue is already in.
     private var choices: [JiraTransition] {
-        (transitions ?? []).filter { $0.to.name != issue.fields.status.name }
+        (transitions ?? []).filter { $0.to.name != currentStatus }
     }
 
     var body: some View {
@@ -282,7 +286,7 @@ private struct TransitionPicker: View {
     private func load() async {
         guard let client = session.client else { return }
         do {
-            transitions = try await client.transitions(issueKey: issue.key)
+            transitions = try await client.transitions(issueKey: issueKey)
         } catch {
             loadError = "Couldn't load statuses: \(error.localizedDescription)"
         }
@@ -293,8 +297,8 @@ private struct TransitionPicker: View {
         savingID = transition.id
         saveError = nil
         do {
-            try await client.transition(issueKey: issue.key, transitionID: transition.id)
-            await onChanged()
+            try await client.transition(issueKey: issueKey, transitionID: transition.id)
+            await onMoved(transition.to)
             isPresented = false
         } catch {
             saveError = "Couldn't move to \(transition.to.name): \(error.localizedDescription). Some moves need fields only Jira's web page asks for."
@@ -438,18 +442,21 @@ struct IssuePersonField: View {
         EditableFieldButton(help: "Change \(role.title)", isEditing: $isEditing) {
             PersonCell(user: user, avatarSize: 20)
         } editor: {
-            PersonPicker(issue: issue, role: role, current: user, isPresented: $isEditing, onChanged: onChanged)
+            PersonPicker(issueKey: issue.key, role: role, current: user, isPresented: $isEditing) { _ in
+                await onChanged()
+            }
         }
     }
 }
 
-/// Search box and matching people. Return picks the first match.
-private struct PersonPicker: View {
-    let issue: JiraIssue
+/// Search box and matching people. Return picks the first match. Once
+/// saved, calls `onChosen` with the person, or nil for Unassigned.
+struct PersonPicker: View {
+    let issueKey: String
     let role: IssuePersonRole
     let current: JiraUser?
     @Binding var isPresented: Bool
-    let onChanged: () async -> Void
+    let onChosen: (JiraUser?) async -> Void
 
     private enum Choice: Hashable {
         case user(String)
@@ -555,7 +562,7 @@ private struct PersonPicker: View {
         do {
             let found = switch role {
             // Only people with the Assignable permission can take the issue.
-            case .assignee: try await client.assignableUsers(issueKey: issue.key, query: text)
+            case .assignee: try await client.assignableUsers(issueKey: issueKey, query: text)
             case .reporter: try await client.users(matching: text)
             }
             if Task.isCancelled { return }
@@ -580,12 +587,12 @@ private struct PersonPicker: View {
         do {
             switch role {
             case .assignee:
-                try await client.setAssignee(accountID: accountID, onIssue: issue.key)
+                try await client.setAssignee(accountID: accountID, onIssue: issueKey)
             case .reporter:
                 guard let accountID else { break }
-                try await client.setReporter(accountID: accountID, onIssue: issue.key)
+                try await client.setReporter(accountID: accountID, onIssue: issueKey)
             }
-            await onChanged()
+            await onChosen(people.first { $0.accountId == accountID })
             isPresented = false
         } catch {
             saveError = "Couldn't change the \(role.title): \(error.localizedDescription)"

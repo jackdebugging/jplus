@@ -61,6 +61,10 @@ struct IssueListView<FilterAccessory: View>: View {
     @State private var sortOrder = [IssueSummarySortComparator(column: .updated, order: .reverse)]
     @State private var filterText = ""
     @FocusState private var filterFocused: Bool
+    /// Issues whose status or assignee was changed from the context menu,
+    /// shown changed until the list is loaded again. Keyed by issue key.
+    @State private var changedIssues: [String: IssueSummary] = [:]
+    @State private var editing: ListEdit?
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     private var isCompact: Bool { horizontalSizeClass == .compact }
@@ -72,10 +76,14 @@ struct IssueListView<FilterAccessory: View>: View {
         filterFocused || !filterText.isEmpty
     }
 
+    private var currentIssues: [IssueSummary] {
+        changedIssues.isEmpty ? issues : issues.map { changedIssues[$0.key] ?? $0 }
+    }
+
     private var filteredIssues: [IssueSummary] {
         let needle = filterText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !needle.isEmpty else { return issues }
-        return issues.filter { $0.matchesLocalFilter(needle) }
+        guard !needle.isEmpty else { return currentIssues }
+        return currentIssues.filter { $0.matchesLocalFilter(needle) }
     }
 
     /// `Table`'s `sortOrder` binding drives header indicators and clicks; row order must be applied locally.
@@ -94,6 +102,13 @@ struct IssueListView<FilterAccessory: View>: View {
             } else {
                 issueTable
             }
+        }
+        .onChange(of: issues) { changedIssues = [:] }
+        .sheet(item: $editing) { edit in
+            ListEditSheet(edit: edit, isPresented: Binding(get: { editing != nil }, set: { if !$0 { editing = nil } })) { changed in
+                changedIssues[changed.key] = changed
+            }
+            .environment(session)
         }
     }
 
@@ -237,8 +252,12 @@ struct IssueListView<FilterAccessory: View>: View {
             .width(widths.updated)
         }
         .contextMenu(forSelectionType: IssueSummary.ID.self) { ids in
-            if let key = key(for: ids) {
+            if let issue = issue(for: ids) {
+                let key = issue.key
                 Button("Open \(key)") { onOpen(key) }
+                Divider()
+                editActions(for: issue)
+                Divider()
                 if let client = session.client {
                     let url = client.browseURL(for: key)
                     Button("Open in Jira") { openURL(url) }
@@ -251,7 +270,7 @@ struct IssueListView<FilterAccessory: View>: View {
                 }
             }
         } primaryAction: { ids in
-            if let key = key(for: ids) { onOpen(key) }
+            if let issue = issue(for: ids) { onOpen(issue.key) }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -297,7 +316,11 @@ struct IssueListView<FilterAccessory: View>: View {
                 CompactIssueRow(issue: issue)
             }
             .foregroundStyle(.primary)
-            .contextMenu { rowActions(for: issue.key) }
+            .contextMenu {
+                editActions(for: issue)
+                Divider()
+                rowActions(for: issue.key)
+            }
         }
         .listStyle(.plain)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -313,15 +336,107 @@ struct IssueListView<FilterAccessory: View>: View {
         Button("Copy Key", systemImage: "doc.on.doc") { Clipboard.copy(key) }
     }
 
-    private func key(for ids: Set<IssueSummary.ID>) -> String? {
+    /// Change Status… and Change Assignee…, each opening its picker in a sheet.
+    @ViewBuilder
+    private func editActions(for issue: IssueSummary) -> some View {
+        Button("Change Status…", systemImage: "arrow.triangle.swap") { editing = .status(issue) }
+        Button("Change Assignee…", systemImage: "person") { editing = .assignee(issue) }
+    }
+
+    private func issue(for ids: Set<IssueSummary.ID>) -> IssueSummary? {
         guard let id = ids.first else { return nil }
-        return issues.first { $0.id == id }?.key
+        return currentIssues.first { $0.id == id }
     }
 }
 
 extension IssueListView where FilterAccessory == EmptyView {
     init(issues: [IssueSummary], onOpen: @escaping (String) -> Void) {
         self.init(issues: issues, onOpen: onOpen) { EmptyView() }
+    }
+}
+
+/// A change started from the list's context menu.
+private enum ListEdit: Identifiable {
+    case status(IssueSummary)
+    case assignee(IssueSummary)
+
+    var issue: IssueSummary {
+        switch self {
+        case .status(let issue), .assignee(let issue): issue
+        }
+    }
+
+    var id: String {
+        switch self {
+        case .status(let issue): "status-\(issue.key)"
+        case .assignee(let issue): "assignee-\(issue.key)"
+        }
+    }
+}
+
+/// The issue page's status or assignee picker, in a sheet, since a context
+/// menu can't load the choices itself.
+private struct ListEditSheet: View {
+    let edit: ListEdit
+    @Binding var isPresented: Bool
+    let onChanged: (IssueSummary) -> Void
+
+    var body: some View {
+        let issue = edit.issue
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).scaledFont(.headline)
+                Text("\(issue.key) · \(issue.fields.summary)")
+                    .scaledFont(.callout)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .padding([.horizontal, .top], 14)
+            .padding(.bottom, 8)
+            Divider()
+            switch edit {
+            case .status:
+                TransitionPicker(issueKey: issue.key, currentStatus: issue.fields.status.name, isPresented: $isPresented) { status in
+                    onChanged(issue.with(status: status))
+                }
+            case .assignee:
+                PersonPicker(issueKey: issue.key, role: .assignee, current: issue.fields.assignee, isPresented: $isPresented) { user in
+                    onChanged(issue.with(assignee: user))
+                }
+            }
+            Divider()
+            HStack {
+                Spacer()
+                Button("Cancel", role: .cancel) { isPresented = false }
+                    .keyboardShortcut(.cancelAction)
+            }
+            .padding(10)
+        }
+        .frame(width: 320)
+    }
+
+    private var title: String {
+        switch edit {
+        case .status: "Change Status"
+        case .assignee: "Change Assignee"
+        }
+    }
+}
+
+private extension IssueSummary {
+    func with(status: JiraIssue.Status) -> IssueSummary {
+        IssueSummary(id: id, key: key, fields: Fields(
+            summary: fields.summary, status: status, issueType: fields.issueType,
+            priority: fields.priority, assignee: fields.assignee, updated: .now
+        ))
+    }
+
+    func with(assignee: JiraUser?) -> IssueSummary {
+        IssueSummary(id: id, key: key, fields: Fields(
+            summary: fields.summary, status: fields.status, issueType: fields.issueType,
+            priority: fields.priority, assignee: assignee, updated: .now
+        ))
     }
 }
 

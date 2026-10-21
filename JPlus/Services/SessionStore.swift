@@ -16,6 +16,9 @@ final class SessionStore {
     private(set) var currentAccountID: UUID?
     /// Message for the account picker, e.g. why automatic sign-in failed.
     var notice: String?
+    /// The account picker is open over the signed-in account (Switch Account…).
+    /// Cancelling it leaves the current account signed in.
+    var isSwitchingAccount = false
 
     let accounts: AccountStore
     private var cachedCloudId: String?
@@ -203,8 +206,15 @@ final class SessionStore {
         if currentAccountID == id { signOut() }
     }
 
+    /// Shows the account picker without signing out, so it can be cancelled.
+    func switchAccount() {
+        guard isSignedIn else { return }
+        isSwitchingAccount = true
+    }
+
     /// Returns to the account picker. Saved accounts are kept.
     func signOut() {
+        isSwitchingAccount = false
         client = nil
         currentAccountID = nil
         cachedCloudId = nil
@@ -228,6 +238,7 @@ final class SessionStore {
         cachedTeamFieldID = nil
         accounts.setActive(account.id)
         notice = nil
+        isSwitchingAccount = false
         state = .signedIn(user)
     }
 

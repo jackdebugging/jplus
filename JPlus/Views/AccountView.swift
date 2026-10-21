@@ -33,7 +33,7 @@ struct AccountView: View {
             .padding()
             .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
 
-            Button("Switch Account…", systemImage: "person.2") { session.signOut() }
+            Button("Switch Account…", systemImage: "person.2") { session.switchAccount() }
                 .help("Go back to the saved accounts list")
 
             VStack(alignment: .leading, spacing: 8) {

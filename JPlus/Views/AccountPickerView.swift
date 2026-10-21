@@ -5,6 +5,10 @@ import SwiftUI
 struct AccountPickerView: View {
     @Environment(SessionStore.self) private var session
 
+    /// Set when the picker is shown over a signed-in account (Switch
+    /// Account…), adding a Cancel button that keeps that account.
+    var onCancel: (() -> Void)?
+
     @State private var signingInID: UUID?
     @State private var rowErrors: [UUID: String] = [:]
     @State private var editing: SavedAccount?
@@ -83,8 +87,14 @@ struct AccountPickerView: View {
                 .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 12))
                 .frame(maxWidth: 560)
 
-                Button("Add Account…", systemImage: "plus") { isAdding = true }
-                    .disabled(signingInID != nil)
+                HStack(spacing: 12) {
+                    Button("Add Account…", systemImage: "plus") { isAdding = true }
+                    if let onCancel {
+                        Button("Cancel", role: .cancel, action: onCancel)
+                            .keyboardShortcut(.cancelAction)
+                    }
+                }
+                .disabled(signingInID != nil)
             }
             .padding(32)
             .frame(maxWidth: .infinity)

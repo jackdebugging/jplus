@@ -70,7 +70,7 @@ struct JPlusApp: App {
                     .disabled(textSizeStep == TextSize.standardStep)
             }
             CommandGroup(after: .appSettings) {
-                Button("Switch Account…") { session.signOut() }
+                Button("Switch Account…") { session.switchAccount() }
                     .keyboardShortcut("a", modifiers: [.command, .shift])
                     .disabled(!session.isSignedIn)
             }

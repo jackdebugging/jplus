@@ -4,6 +4,19 @@ struct ContentView: View {
     @Environment(SessionStore.self) private var session
 
     var body: some View {
+        @Bindable var session = session
+        content
+            .sheet(isPresented: $session.isSwitchingAccount) {
+                AccountPickerView(onCancel: { session.isSwitchingAccount = false })
+                    .environment(session)
+                    #if os(macOS)
+                    .frame(minWidth: 620, minHeight: 520)
+                    #endif
+            }
+    }
+
+    @ViewBuilder
+    private var content: some View {
         switch session.state {
         case .restoring:
             // Only lasts while saved accounts are read from the Keychain.

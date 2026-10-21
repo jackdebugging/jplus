@@ -8,6 +8,8 @@ struct SavedPlace: Codable, Equatable {
         case issue(String)
         /// Saved by id and looked up again on launch, so its counts are current.
         case version(projectKey: String, versionID: String)
+        /// A Jira space under Spaces, by project key.
+        case space(String)
     }
 
     var sidebar: Screen

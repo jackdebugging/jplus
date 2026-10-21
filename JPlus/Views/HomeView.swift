@@ -17,6 +17,8 @@ struct HomeView: View {
         case mentions
         case priorities
         case version(VersionRoute)
+        /// A Jira space (project), listed under Spaces.
+        case space(JiraProject)
         case account
         case search
         case versions
@@ -50,6 +52,8 @@ struct HomeView: View {
     @AppStorage("sidebarVersionsExpanded") private var versionsExpanded = true
     @State private var sidebarVersions: [VersionRoute] = []
     @State private var isRefreshingVersions = false
+    @AppStorage("sidebarSpacesExpanded") private var spacesExpanded = false
+    @State private var sidebarSpaces: [JiraProject] = []
     /// How many recent issues the sidebar shows; grows with Load More.
     @State private var visibleRecentCount = HomeView.recentPageSize
     @State private var showPalette = false
@@ -107,6 +111,9 @@ struct HomeView: View {
             await loadSidebarVersions()
             hasLoadedSidebarVersions = true
             chooseStartPage()
+        }
+        .task {
+            await loadSidebarSpaces()
         }
         .task {
             await restoreLastPlace()
@@ -180,6 +187,25 @@ struct HomeView: View {
                     .tag(SidebarItem.mentions)
                 Label("Daily Priorities", systemImage: "checklist")
                     .tag(SidebarItem.priorities)
+
+                if !sidebarSpaces.isEmpty {
+                    DisclosureGroup(isExpanded: $spacesExpanded) {
+                        ForEach(sidebarSpaces) { project in
+                            Label(project.name, systemImage: "square.stack")
+                                .lineLimit(1)
+                                .help("\(project.name) (\(project.key))")
+                                .tag(SidebarItem.space(project))
+                        }
+                    } label: {
+                        // Spaces has no screen of its own, so the whole row expands and collapses.
+                        Label("Spaces", systemImage: "square.grid.2x2")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                withAnimation { spacesExpanded.toggle() }
+                            }
+                    }
+                }
 
                 if !recentKeys.isEmpty {
                     Section("Recent Issues") {
@@ -449,6 +475,9 @@ struct HomeView: View {
         case .version(let route):
             VersionDetailView(route: route, onOpenIssue: pushIssue)
                 .id(route.version.id)
+        case .space(let project):
+            SpaceIssuesView(project: project, onOpenIssue: pushIssue)
+                .id(project.key)
         case .newTicket:
             NewTicketView(suggestedProjectKey: recentProjectKey, onCreated: pushIssue)
         case .issue(let key):
@@ -491,6 +520,16 @@ struct HomeView: View {
         }
     }
 
+    /// Every Jira space visible to the user, by name, for the Spaces group.
+    private func loadSidebarSpaces() async {
+        guard let client = session.client else { return }
+        do {
+            sidebarSpaces = try await client.projects()
+        } catch {
+            // Leave Spaces out of the sidebar; nothing else depends on it.
+        }
+    }
+
     /// Without a place to restore, opens on the first version under Versions
     /// in the sidebar, or My Issues if there are none or they couldn't load.
     /// Runs once, and not at all if something was picked while loading.
@@ -515,6 +554,7 @@ struct HomeView: View {
         case .newTicket: .newTicket
         case .issue(let key): .issue(key)
         case .version(let route): .version(projectKey: route.project.key, versionID: route.version.id)
+        case .space(let project): .space(project.key)
         }
         let stack: [SavedPlace.Screen] = path.suffix(SavedPlace.maxStackDepth).map {
             switch $0 {
@@ -573,6 +613,8 @@ struct HomeView: View {
                 return .version(route)
             }
             return await resolver.route(projectKey: projectKey, versionID: versionID).map(SidebarItem.version)
+        case .space(let key):
+            return await resolver.project(key: key).map(SidebarItem.space)
         }
     }
 
@@ -644,6 +686,12 @@ private struct VersionResolver {
 
     init(client: JiraClient?) {
         self.client = client
+    }
+
+    mutating func project(key: String) async -> JiraProject? {
+        guard let client else { return nil }
+        if projects == nil { projects = try? await client.projects() }
+        return projects?.first { $0.key == key }
     }
 
     mutating func route(projectKey: String, versionID: String) async -> VersionRoute? {

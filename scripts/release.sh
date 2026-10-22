@@ -78,9 +78,12 @@ xcrun stapler validate "$DMG"
 cp "$DMG" "$LATEST"
 
 echo "Writing release notes…"
-PREVIOUS=$(git describe --tags --abbrev=0 2>/dev/null || true)
+# The previous release is the newest tag by version, not the nearest one, and
+# --cherry-pick drops commits it already shipped: a rebase after a release
+# leaves its tag off this branch, with its commits here under new hashes.
+PREVIOUS=$(git tag --list 'v*' --sort=-version:refname | head -1)
 if [[ -n "$PREVIOUS" ]]; then
-    CHANGES=$(printf 'Changes since %s:\n\n' "$PREVIOUS"; git log --no-merges --invert-grep --grep='^Bump the version' --pretty='- %s' "$PREVIOUS..HEAD")
+    CHANGES=$(printf 'Changes since %s:\n\n' "$PREVIOUS"; git log --no-merges --right-only --cherry-pick --invert-grep --grep='^Bump the version' --pretty='- %s' "$PREVIOUS...HEAD")
 else
     CHANGES="First release."
 fi

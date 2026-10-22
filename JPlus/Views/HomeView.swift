@@ -54,6 +54,8 @@ struct HomeView: View {
     @State private var isRefreshingVersions = false
     @AppStorage("sidebarSpacesExpanded") private var spacesExpanded = false
     @State private var sidebarSpaces: [JiraProject] = []
+    @State private var spacesFilter = ""
+    @FocusState private var spacesFilterFocused: Bool
     /// How many recent issues the sidebar shows; grows with Load More.
     @State private var visibleRecentCount = HomeView.recentPageSize
     @State private var showPalette = false
@@ -190,7 +192,14 @@ struct HomeView: View {
 
                 if !sidebarSpaces.isEmpty {
                     DisclosureGroup(isExpanded: $spacesExpanded) {
-                        ForEach(sidebarSpaces) { project in
+                        spacesFilterField
+                        let spaces = filteredSpaces
+                        if spaces.isEmpty {
+                            Text("No spaces match")
+                                .foregroundStyle(.secondary)
+                                .selectionDisabled()
+                        }
+                        ForEach(spaces) { project in
                             Label(project.name, systemImage: "square.stack")
                                 .lineLimit(1)
                                 .help("\(project.name) (\(project.key))")
@@ -225,6 +234,60 @@ struct HomeView: View {
             Divider()
             accountFooter
         }
+    }
+
+    /// Spaces whose name or key contains the filter text, ignoring case and accents.
+    private var filteredSpaces: [JiraProject] {
+        let needle = spacesFilter.trimmingCharacters(in: .whitespaces)
+        guard !needle.isEmpty else { return sidebarSpaces }
+        return sidebarSpaces.filter {
+            $0.name.range(of: needle, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+                || $0.key.range(of: needle, options: .caseInsensitive) != nil
+        }
+    }
+
+    /// Styled like the issue list's "Filter this list" field.
+    private var spacesFilterField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            // The sidebar draws a field's prompt in its label color, whatever
+            // style it's given, so the placeholder is drawn here instead.
+            TextField("", text: $spacesFilter)
+                .textFieldStyle(.plain)
+                .focused($spacesFilterFocused)
+                .accessibilityLabel("Filter spaces")
+                .background(alignment: .leading) {
+                    if spacesFilter.isEmpty {
+                        Text("Filter spaces")
+                            .foregroundStyle(Color.placeholderText)
+                            .lineLimit(1)
+                            .allowsHitTesting(false)
+                    }
+                }
+                #if os(macOS)
+                .onExitCommand { spacesFilter = "" }
+                #endif
+            if !spacesFilter.isEmpty {
+                Button {
+                    spacesFilter = ""
+                    spacesFilterFocused = true
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Clear filter")
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.controlBackground))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(Color.secondary.opacity(spacesFilterFocused ? 0.45 : 0.22))
+        )
+        .selectionDisabled()
     }
 
     private var versionsRow: some View {

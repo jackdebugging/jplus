@@ -103,6 +103,15 @@ extension Color {
         #endif
     }
 
+    /// The gray of a text field's placeholder.
+    static var placeholderText: Color {
+        #if os(macOS)
+        Color(nsColor: .placeholderTextColor)
+        #else
+        Color(uiColor: .placeholderText)
+        #endif
+    }
+
     /// The system's link color.
     static var link: Color {
         #if os(macOS)

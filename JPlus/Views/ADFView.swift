@@ -62,11 +62,171 @@ private struct ADFBlocks: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(nodes.enumerated()), id: \.offset) { _, node in
-                ADFBlock(node: node)
+            ForEach(Array(Self.runs(of: nodes).enumerated()), id: \.offset) { _, run in
+                switch run {
+                case .text(let nodes): ADFTextRun(nodes: nodes)
+                case .block(let node): ADFBlock(node: node)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private enum Run {
+        case text([ADFNode])
+        case block(ADFNode)
+    }
+
+    /// Consecutive paragraphs, headings and lists go together, so they render as one Text.
+    private static func runs(of nodes: [ADFNode]) -> [Run] {
+        var runs: [Run] = []
+        for node in nodes {
+            guard ADFTextRun.canInclude(node) else {
+                runs.append(.block(node))
+                continue
+            }
+            if case .text(let previous) = runs.last {
+                runs[runs.count - 1] = .text(previous + [node])
+            } else {
+                runs.append(.text([node]))
+            }
+        }
+        return runs
+    }
+}
+
+/// Paragraphs, headings and lists in a row, drawn as a single Text: SwiftUI
+/// can't extend a selection from one Text into the next, so this lets a drag
+/// select across them. Text can't hang-indent, so a wrapped list item
+/// continues at the margin.
+private struct ADFTextRun: View {
+    private static let listTypes: Set<String> = ["bulletList", "orderedList", "taskList"]
+
+    /// Whether `node` can be drawn as text: lists qualify unless an item holds
+    /// a code block, table, image or the like.
+    static func canInclude(_ node: ADFNode) -> Bool {
+        switch node.type {
+        case "paragraph", "heading":
+            return true
+        case _ where listTypes.contains(node.type):
+            return node.children.allSatisfy { item in
+                if listTypes.contains(item.type) { return canInclude(item) }
+                if item.type == "taskItem" { return item.children.allSatisfy(ADFInline.isInline) }
+                return item.children.allSatisfy(canInclude)
+            }
+        default:
+            return false
+        }
+    }
+
+    let nodes: [ADFNode]
+
+    @Environment(\.adfMedia) private var media
+    @Environment(\.textSizeScale) private var textScale
+    @Environment(\.appFont) private var appFont
+
+    var body: some View {
+        Text(attributedString).textSelection(.enabled)
+    }
+
+    /// One paragraph of the text: indented `level` steps, after a marker if
+    /// it starts a list item, and `gap` points below the line before it.
+    private struct Line {
+        var text: AttributedString
+        var level = 0
+        var marker: AttributedString?
+        var gap: CGFloat = 5
+    }
+
+    private var attributedString: AttributedString {
+        var result = AttributedString()
+        let lines = nodes.flatMap { node in
+            var lines = lines(of: node, level: 0)
+            // A list's first item sits a block's distance from what's above it.
+            if !lines.isEmpty { lines[0].gap = max(lines[0].gap, 5) }
+            return lines
+        }
+        for (index, line) in lines.enumerated() {
+            if index > 0 {
+                // A short blank line stands in for the spacing between views.
+                result += AttributedString("\n")
+                var gap = AttributedString("\n")
+                gap.font = .system(size: line.gap * textScale)
+                result += gap
+            }
+            result += AttributedString(String(repeating: "    ", count: line.level))
+            if let marker = line.marker { result += marker + AttributedString("  ") }
+            result += line.text
+        }
+        return result
+    }
+
+    private func lines(of node: ADFNode, level: Int) -> [Line] {
+        switch node.type {
+        case "heading":
+            var text = inline(node.children)
+            let font = headingFont(level: node.intAttr("level") ?? 3).font(scale: textScale, family: appFont)
+            // Status lozenges keep their own font.
+            for range in text.runs.filter({ $0.font == nil }).map(\.range) {
+                text[range].font = font
+            }
+            return [Line(text: text, level: level, gap: 9)]
+
+        case _ where Self.listTypes.contains(node.type):
+            let start = node.intAttr("order") ?? 1
+            return node.children.enumerated().flatMap { index, item -> [Line] in
+                // A task list nests by holding another task list among its items.
+                if Self.listTypes.contains(item.type) {
+                    return lines(of: item, level: level + 1).map { line in
+                        var line = line
+                        line.gap = 2
+                        return line
+                    }
+                }
+                var content = item.type == "taskItem"
+                    ? [Line(text: inline(item.children), level: level + 1)]
+                    : item.children.flatMap { lines(of: $0, level: level + 1) }
+                if content.isEmpty { content = [Line(text: AttributedString(), level: level + 1)] }
+                for i in content.indices { content[i].gap = 2 }
+                content[0].level = level
+                content[0].marker = marker(for: node, item: item, number: start + index)
+                return content
+            }
+
+        default:
+            return [Line(text: inline(node.children), level: level)]
+        }
+    }
+
+    private func marker(for list: ADFNode, item: ADFNode, number: Int) -> AttributedString {
+        switch list.type {
+        case "orderedList":
+            var marker = AttributedString("\(number).")
+            marker.foregroundColor = .secondary
+            return marker
+        case "taskList":
+            let isDone = item.attr("state") == "DONE"
+            var marker = AttributedString(isDone ? "☑" : "☐")
+            marker.foregroundColor = isDone ? .accentColor : .secondary
+            return marker
+        default:
+            var marker = AttributedString("•")
+            marker.foregroundColor = .secondary
+            return marker
+        }
+    }
+
+    private func inline(_ nodes: [ADFNode]) -> AttributedString {
+        ADFInline.attributedString(nodes, media: media, textScale: textScale, font: appFont)
+    }
+}
+
+private func headingFont(level: Int) -> ScaledFont {
+    switch level {
+    case 1: return .title.weight(.bold)
+    case 2: return .title2.weight(.semibold)
+    case 3: return .title3.weight(.semibold)
+    default: return .headline
     }
 }
 
@@ -78,21 +238,8 @@ private struct ADFBlock: View {
     @Environment(\.appFont) private var appFont
 
     var body: some View {
+        // Paragraphs and headings are drawn by ADFTextRun.
         switch node.type {
-        case "paragraph":
-            if node.children.isEmpty {
-                Color.clear.frame(height: 4)
-            } else {
-                Text(ADFInline.attributedString(node.children, media: media, textScale: textScale, font: appFont))
-                    .textSelection(.enabled)
-            }
-
-        case "heading":
-            Text(ADFInline.attributedString(node.children, media: media, textScale: textScale, font: appFont))
-                .scaledFont(headingFont(level: node.intAttr("level") ?? 3))
-                .padding(.top, 4)
-                .textSelection(.enabled)
-
         case "bulletList":
             listView(items: node.children) { _ in Text("•") }
 
@@ -170,15 +317,6 @@ private struct ADFBlock: View {
             } else {
                 ADFBlocks(nodes: node.children)
             }
-        }
-    }
-
-    private func headingFont(level: Int) -> ScaledFont {
-        switch level {
-        case 1: return .title.weight(.bold)
-        case 2: return .title2.weight(.semibold)
-        case 3: return .title3.weight(.semibold)
-        default: return .headline
         }
     }
 

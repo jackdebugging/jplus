@@ -973,11 +973,21 @@ private struct CommentView: View {
                 if let body = comment.body {
                     ADFView(node: body)
                 }
-                Button("Reply", systemImage: "arrowshape.turn.up.left", action: onReply)
-                    .buttonStyle(.borderless)
-                    .scaledFont(.caption)
-                    .foregroundStyle(.secondary)
-                    .help("Reply in this thread")
+                HStack(spacing: 12) {
+                    Button("Reply", systemImage: "arrowshape.turn.up.left", action: onReply)
+                        .help("Reply in this thread")
+                    // Each paragraph is its own selectable Text, so a drag can't
+                    // select across them; this copies the whole comment.
+                    if let body = comment.body {
+                        Button("Copy", systemImage: "doc.on.doc") {
+                            Clipboard.copy(body.plainText.trimmingCharacters(in: .whitespacesAndNewlines))
+                        }
+                        .help("Copy this comment's text")
+                    }
+                }
+                .buttonStyle(.borderless)
+                .scaledFont(.caption)
+                .foregroundStyle(.secondary)
             }
         }
     }

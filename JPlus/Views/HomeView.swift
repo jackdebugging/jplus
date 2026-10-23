@@ -56,6 +56,8 @@ struct HomeView: View {
     @State private var sidebarSpaces: [JiraProject] = []
     @State private var spacesFilter = ""
     @FocusState private var spacesFilterFocused: Bool
+    /// Set from View > Show in Sidebar, which reads the standard defaults, not this account's.
+    @AppStorage(SidebarSection.hiddenStorageKey, store: .standard) private var hiddenSectionsRaw = ""
     /// How many recent issues the sidebar shows; grows with Load More.
     @State private var visibleRecentCount = HomeView.recentPageSize
     @State private var showPalette = false
@@ -69,6 +71,10 @@ struct HomeView: View {
 
     private var recentKeys: [String] {
         recentKeysRaw.split(separator: ",").map(String.init).filter { !$0.isEmpty }
+    }
+
+    private func shows(_ section: SidebarSection) -> Bool {
+        !SidebarSection.hidden(in: hiddenSectionsRaw).contains(section)
     }
 
     /// Project key of the most recently viewed issue, used as a default elsewhere.
@@ -170,27 +176,35 @@ struct HomeView: View {
         VStack(spacing: 0) {
             sidebarHeader
             List(selection: $selection) {
-                #if os(macOS)
-                DisclosureGroup(isExpanded: $versionsExpanded) {
-                    sidebarVersionRows
-                } label: {
+                if shows(.versions) {
+                    #if os(macOS)
+                    DisclosureGroup(isExpanded: $versionsExpanded) {
+                        sidebarVersionRows
+                    } label: {
+                        versionsRow
+                    }
+                    #else
+                    // On iOS a disclosure group's label only expands and collapses,
+                    // so Versions could never be opened; its versions sit beneath it.
                     versionsRow
+                    sidebarVersionRows
+                        .padding(.leading, 20)
+                    #endif
                 }
-                #else
-                // On iOS a disclosure group's label only expands and collapses,
-                // so Versions could never be opened; its versions sit beneath it.
-                versionsRow
-                sidebarVersionRows
-                    .padding(.leading, 20)
-                #endif
-                Label("My Issues", systemImage: "person.crop.square")
-                    .tag(SidebarItem.myIssues)
-                Label("Mentions", systemImage: "at")
-                    .tag(SidebarItem.mentions)
-                Label("Daily Priorities", systemImage: "checklist")
-                    .tag(SidebarItem.priorities)
+                if shows(.myIssues) {
+                    Label("My Issues", systemImage: "person.crop.square")
+                        .tag(SidebarItem.myIssues)
+                }
+                if shows(.mentions) {
+                    Label("Mentions", systemImage: "at")
+                        .tag(SidebarItem.mentions)
+                }
+                if shows(.priorities) {
+                    Label("Daily Priorities", systemImage: "checklist")
+                        .tag(SidebarItem.priorities)
+                }
 
-                if !sidebarSpaces.isEmpty {
+                if shows(.spaces), !sidebarSpaces.isEmpty {
                     DisclosureGroup(isExpanded: $spacesExpanded) {
                         spacesFilterField
                         let spaces = filteredSpaces
@@ -216,7 +230,7 @@ struct HomeView: View {
                     }
                 }
 
-                if !recentKeys.isEmpty {
+                if shows(.recentIssues), !recentKeys.isEmpty {
                     Section("Recent Issues") {
                         ForEach(recentKeys.prefix(visibleRecentCount), id: \.self) { key in
                             Label(key, systemImage: "ticket")
@@ -595,11 +609,13 @@ struct HomeView: View {
 
     /// Without a place to restore, opens on the first version under Versions
     /// in the sidebar, or My Issues if there are none or they couldn't load.
+    /// Either is skipped while hidden from the sidebar.
     /// Runs once, and not at all if something was picked while loading.
     private func chooseStartPage() {
         guard !hasStartPage, !isRestoringPlace, hasLoadedSidebarVersions else { return }
         hasStartPage = true
-        selection = sidebarVersions.first.map(SidebarItem.version) ?? .myIssues
+        let firstVersion = shows(.versions) ? sidebarVersions.first.map(SidebarItem.version) : nil
+        selection = firstVersion ?? (shows(.myIssues) ? .myIssues : nil)
     }
 
     // MARK: - Last place

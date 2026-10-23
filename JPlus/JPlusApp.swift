@@ -6,6 +6,7 @@ struct JPlusApp: App {
     @State private var settings = SettingsStore()
     @AppStorage(TextSize.storageKey) private var textSizeStep = TextSize.standardStep
     @AppStorage(AppFont.storageKey) private var appFont = AppFont.standard
+    @AppStorage(SidebarSection.hiddenStorageKey) private var hiddenSidebarRaw = ""
     #if os(macOS)
     @State private var updater = AppUpdater()
     #endif
@@ -59,6 +60,12 @@ struct JPlusApp: App {
             }
             CommandGroup(after: .toolbar) {
                 Divider()
+                Menu("Show in Sidebar") {
+                    ForEach(SidebarSection.allCases) { section in
+                        Toggle(section.title, isOn: sidebarBinding(for: section))
+                    }
+                }
+                Divider()
                 Button("Make Text Bigger") { textSizeStep = TextSize.clamped(textSizeStep + 1) }
                     .keyboardShortcut("+", modifiers: .command)
                     .disabled(textSizeStep >= TextSize.largestStep)
@@ -84,5 +91,14 @@ struct JPlusApp: App {
                 .environment(updater)
         }
         #endif
+    }
+
+    /// Checked while `section` shows in the sidebar.
+    private func sidebarBinding(for section: SidebarSection) -> Binding<Bool> {
+        Binding {
+            !SidebarSection.hidden(in: hiddenSidebarRaw).contains(section)
+        } set: { isShown in
+            hiddenSidebarRaw = SidebarSection.raw(hiddenSidebarRaw, showing: section, isShown)
+        }
     }
 }

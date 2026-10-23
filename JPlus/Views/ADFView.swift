@@ -141,7 +141,7 @@ private struct ADFTextRun: View {
     private var attributedString: AttributedString {
         var result = AttributedString()
         let lines = nodes.flatMap { node in
-            var lines = lines(of: node, level: 0)
+            var lines = self.lines(of: node, level: 0)
             // A list's first item sits a block's distance from what's above it.
             if !lines.isEmpty { lines[0].gap = max(lines[0].gap, 5) }
             return lines

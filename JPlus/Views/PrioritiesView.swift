@@ -856,7 +856,16 @@ private struct PriorityItemRow: View {
                 .strikethrough(item.isDone && Self.strikesDone)
                 .foregroundStyle(item.isDone ? .secondary : .primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                #if os(macOS)
+                // Anywhere the row highlights but the check, not just on the text.
+                .clickable(outTo: Self.clickOutsets)
+                // Also the click that brings the window forward, as in a text
+                // view (and as the check already does); otherwise one from
+                // another app only activated the window.
+                .allowsWindowActivationEvents()
+                #else
                 .contentShape(Rectangle())
+                #endif
                 .help(hasComments ? "Commented on in Confluence, so it can't be edited here" : "")
                 // One click edits, as in Reminders. It runs alongside link
                 // handling so links still open, and a link click doesn't edit.
@@ -905,6 +914,11 @@ private struct PriorityItemRow: View {
     static let checkWidth: CGFloat = 16
     static let lineSpacing: CGFloat = 8
     static let strikesDone = true
+    /// How far past the text a click still edits: across the gap to the
+    /// check, and out to the edges of the row's highlight (its padding in
+    /// `body`). Without it a click at the edge of a highlighted row, or
+    /// just before the text, did nothing.
+    static let clickOutsets = EdgeInsets(top: 3, leading: lineSpacing, bottom: 3, trailing: 6)
 
     private var check: some View {
         Toggle("", isOn: Binding(
@@ -1218,6 +1232,14 @@ private func whenEditing(_ text: String, tries: Int = 5, _ body: @escaping (NSWi
 }
 
 private extension View {
+    /// Takes clicks out to `insets` around the view without moving it, so
+    /// a gesture after this still reports where they land in its own space.
+    func clickable(outTo insets: EdgeInsets) -> some View {
+        padding(insets)
+            .contentShape(Rectangle())
+            .padding(EdgeInsets(top: -insets.top, leading: -insets.leading, bottom: -insets.bottom, trailing: -insets.trailing))
+    }
+
     /// While the field is focused, a click anywhere else in the app ends its
     /// edit, as in Reminders; the click still does what it would. `text` is
     /// what the field shows, to know it once it's being edited.

@@ -322,6 +322,7 @@ private struct IssueDetailsPane: View {
     let onChanged: () async -> Void
 
     @State private var copiedPromptToast = false
+    @State private var showsBranchCreator = false
 
     private var fields: JiraIssue.Fields { issue.fields }
 
@@ -364,10 +365,23 @@ private struct IssueDetailsPane: View {
                 }
                 .scaledFont(.callout)
 
-                if let promptKind = IssueCursorPromptKind.forIssue(issue) {
-                    Divider()
-                    IssueCursorPromptButton(kind: promptKind) {
-                        copyPrompt(kind: promptKind)
+                Divider()
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Actions")
+                        .scaledFont(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                    Button {
+                        showsBranchCreator = true
+                    } label: {
+                        Label("Create Branch…", systemImage: "arrow.triangle.branch")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .help("Create a GitHub branch from this issue")
+                    if let promptKind = IssueCursorPromptKind.forIssue(issue) {
+                        IssueCursorPromptButton(kind: promptKind) {
+                            copyPrompt(kind: promptKind)
+                        }
                     }
                 }
 
@@ -392,6 +406,9 @@ private struct IssueDetailsPane: View {
             }
         }
         .animation(.snappy(duration: 0.2), value: copiedPromptToast)
+        .sheet(isPresented: $showsBranchCreator) {
+            CreateBranchView(issue: issue).id(issue.key)
+        }
     }
 
     private func copyPrompt(kind: IssueCursorPromptKind) {
@@ -1011,17 +1028,12 @@ private struct IssueCursorPromptButton: View {
     let action: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Actions")
-                .scaledFont(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
-            Button(action: action) {
-                Label(kind.buttonTitle, systemImage: kind.systemImage)
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.bordered)
-            .help("Copy a prompt for an AI agent (paste into chat)")
+        Button(action: action) {
+            Label(kind.buttonTitle, systemImage: kind.systemImage)
+                .frame(maxWidth: .infinity)
         }
+        .buttonStyle(.bordered)
+        .help("Copy a prompt for an AI agent (paste into chat)")
     }
 }
 

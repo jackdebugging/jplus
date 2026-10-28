@@ -107,15 +107,7 @@ struct PrioritiesView: View {
                     await findFolder(using: client)
                 }
             }
-            .environment(\.openURL, OpenURLAction { url in
-                // Ticket links on this site open in the app; anything else goes to the browser.
-                if url.host() == session.client?.credentials.siteURL.host(),
-                   let key = IssueKey.parse(url.absoluteString) {
-                    onOpenIssue(key)
-                    return .handled
-                }
-                return .systemAction
-            })
+            .opensIssueLinksInApp(onOpenIssue)
     }
 
     /// The loaded folder's own link, or the saved link if it is one.
@@ -194,39 +186,53 @@ struct PrioritiesView: View {
 
     private var days: some View {
         PriorityPane(model: model, drafts: drafts, swipedOpenID: $swipedOpenID) {
+            #if os(macOS)
+            // All built at once. A lazy stack built a whole day as it
+            // scrolled into view and measured days again as they came and
+            // went, so scrolling stalled at each day and the scroller jumped.
+            VStack(alignment: .leading, spacing: 28) {
+                dayStack
+            }
+            #else
             // Lazy, so only the days on screen or near it are built and
             // laid out. A day far off screen is let go and built afresh
             // when it comes back, which is why what's being typed in one
             // lives in `drafts`.
             LazyVStack(alignment: .leading, spacing: 28) {
-                if let message = model.errorMessage {
-                    PriorityErrorLabel(message: message)
-                }
-                if model.todayRef == nil {
-                    HStack(spacing: 8) {
-                        Image(systemName: "sun.max").foregroundStyle(.secondary)
-                        Text("There's no page for today yet.").foregroundStyle(.secondary)
-                        Button("Start Today") {
-                            Task { await model.createDay(Date()) }
-                        }
-                        .disabled(model.isCreatingDay)
-                    }
-                    .scaledFont(.callout)
-                }
-                ForEach(model.shownDays) { day in
-                    daySection(day, isSelected: day.pageID == model.selectedID)
-                }
-                if let loading = model.shownIDs.first(where: model.loadingPageIDs.contains),
-                   let ref = model.index.first(where: { $0.pageID == loading }) {
-                    HStack(spacing: 6) {
-                        ProgressView().controlSize(.small)
-                        Text("Loading \(ref.title)…").foregroundStyle(.secondary)
-                    }
-                    .scaledFont(.callout)
-                }
-                previousDayButton
+                dayStack
             }
+            #endif
         }
+    }
+
+    @ViewBuilder
+    private var dayStack: some View {
+        if let message = model.errorMessage {
+            PriorityErrorLabel(message: message)
+        }
+        if model.todayRef == nil {
+            HStack(spacing: 8) {
+                Image(systemName: "sun.max").foregroundStyle(.secondary)
+                Text("There's no page for today yet.").foregroundStyle(.secondary)
+                Button("Start Today") {
+                    Task { await model.createDay(Date()) }
+                }
+                .disabled(model.isCreatingDay)
+            }
+            .scaledFont(.callout)
+        }
+        ForEach(model.shownDays) { day in
+            daySection(day, isSelected: day.pageID == model.selectedID)
+        }
+        if let loading = model.shownIDs.first(where: model.loadingPageIDs.contains),
+           let ref = model.index.first(where: { $0.pageID == loading }) {
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text("Loading \(ref.title)…").foregroundStyle(.secondary)
+            }
+            .scaledFont(.callout)
+        }
+        previousDayButton
     }
 
     @ViewBuilder
@@ -468,6 +474,42 @@ struct PriorityPane<Content: View>: View {
     }
 }
 
+extension View {
+    /// Ticket links on this site open in the app; anything else goes to the browser.
+    func opensIssueLinksInApp(_ onOpenIssue: @escaping (String) -> Void) -> some View {
+        modifier(IssueLinkOpener(onOpenIssue: onOpenIssue))
+    }
+}
+
+/// Hands down one link action for as long as the screen is up. A new action
+/// each time the screen's body ran changed the environment, so every row,
+/// comment and day that reads `openURL` was built again with every change to
+/// the page: a tick, a save, comments loading.
+private struct IssueLinkOpener: ViewModifier {
+    let onOpenIssue: (String) -> Void
+
+    @Environment(SessionStore.self) private var session
+    @State private var opener = Opener()
+
+    func body(content: Content) -> some View {
+        opener.session = session
+        opener.onOpenIssue = onOpenIssue
+        return content.environment(\.openURL, opener.action)
+    }
+
+    /// What the action reads when a link is clicked; `body` keeps it current.
+    private final class Opener {
+        var session: SessionStore?
+        var onOpenIssue: (String) -> Void = { _ in }
+        private(set) lazy var action = OpenURLAction { [weak self] url in
+            guard let self, url.host() == session?.client?.credentials.siteURL.host(),
+                  let key = IssueKey.parse(url.absoluteString) else { return .systemAction }
+            onOpenIssue(key)
+            return .handled
+        }
+    }
+}
+
 /// A page's priorities, each edited in place, with the row Return opens
 /// under one for the next, and at the end, when `canAdd`, the field for a
 /// new one.
@@ -513,6 +555,7 @@ struct PriorityItemList: View {
                             swipedOpenID: $swipedOpenID,
                             onReturn: { newItemSpot = spot }
                         )
+                        .equatable()
                         if newItemSpot == spot {
                             NewPriorityRow(itemName: itemName) { text in
                                 // The next one starts under the one just added.
@@ -652,19 +695,17 @@ private struct PriorityDayList: View {
 
 private extension View {
     /// While a change saves, washes the view out and lets no click or tap
-    /// through to it.
+    /// through to it. The wash is always there, clear and letting clicks
+    /// through until a save starts: turning off the view's own hit testing,
+    /// or adding a wash over it, made AppKit take its scroll view or list out
+    /// of the window and put it back at the start and end of every save.
     func lockedWhileSaving(_ isLocked: Bool) -> some View {
-        allowsHitTesting(!isLocked)
-            .overlay {
-                ZStack {
-                    if isLocked {
-                        Rectangle()
-                            .fill(.background.opacity(0.55))
-                            .transition(.opacity)
-                    }
-                }
+        overlay {
+            Rectangle()
+                .fill(.background.opacity(isLocked ? 0.55 : 0))
+                .allowsHitTesting(isLocked)
                 .animation(.easeOut(duration: 0.15), value: isLocked)
-            }
+        }
     }
 }
 
@@ -729,8 +770,8 @@ enum CommentSpot: Hashable {
 }
 
 /// What's being typed in the days and not yet saved. The screen keeps it
-/// rather than the days: the list lets go of a day far off screen and
-/// builds it afresh when it's back, so it would otherwise be lost.
+/// rather than the days: on iOS the list lets go of a day far off screen
+/// and builds it afresh when it's back, so it would otherwise be lost.
 @Observable
 final class PriorityDrafts {
     /// The new priority in the add field.
@@ -1026,7 +1067,7 @@ private struct PriorityItemRow: View {
             get: { item.isDone },
             set: { model.setDone($0, item: item, in: day) }
         ))
-        .checkboxToggleStyle()
+        .toggleStyle(.drawnCheckbox)
         .labelsHidden()
         .frame(width: Self.checkWidth)
         .disabled(isBusy)
@@ -1107,6 +1148,17 @@ private struct PriorityItemRow: View {
         if draft != item.plainText {
             model.setText(draft, item: item, in: day)
         }
+    }
+}
+
+/// A row is built again only when what it shows has changed. The closure it's
+/// handed and its freshly filtered threads never compared equal, so any change
+/// to a page built every row on the screen again. Its day matters only for
+/// which page its edits go to.
+extension PriorityItemRow: Equatable {
+    nonisolated static func == (a: Self, b: Self) -> Bool {
+        a.item == b.item && a.day.pageID == b.day.pageID && a.threads == b.threads && a.hasComments == b.hasComments
+            && a.canMoveToToday == b.canMoveToToday && a.isBusy == b.isBusy
     }
 }
 
@@ -1318,6 +1370,95 @@ private struct PriorityCommentComposer: View {
 }
 
 #if os(macOS)
+/// The Mac's checkbox drawn by SwiftUI instead of AppKit, which made it the
+/// slowest control on a priority row to build and lay out. It looks as
+/// AppKit's does: grey until ticked, then the accent color with a white
+/// check, grey again while the window is in the background, and faded while
+/// disabled. A click that brings the window forward ticks it, as with AppKit's.
+struct DrawnCheckboxStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Button {
+            configuration.isOn.toggle()
+        } label: {
+            EmptyView()
+        }
+        .buttonStyle(DrawnCheckboxButtonStyle(isOn: configuration.isOn))
+        .allowsWindowActivationEvents()
+        .accessibilityRepresentation {
+            Toggle(isOn: configuration.$isOn) { configuration.label }
+        }
+    }
+}
+
+extension ToggleStyle where Self == DrawnCheckboxStyle {
+    static var drawnCheckbox: Self { Self() }
+}
+
+private struct DrawnCheckboxButtonStyle: ButtonStyle {
+    let isOn: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        DrawnCheckbox(isOn: isOn, isPressed: configuration.isPressed)
+    }
+}
+
+/// Matched to AppKit's on macOS 26: a 12, 14, 16 or 18 point box by control
+/// size, sitting with its middle 5 points above the text's baseline (4 when
+/// small), in the same fills.
+private struct DrawnCheckbox: View {
+    let isOn: Bool
+    let isPressed: Bool
+
+    @Environment(\.controlSize) private var controlSize
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.appearsActive) private var appearsActive
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: side * 0.3, style: .continuous)
+        let lift = aboveBaseline
+        shape
+            .fill(fill)
+            .overlay {
+                if isOn {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: side * 0.7, weight: .bold))
+                        .foregroundStyle(appearsActive ? Color.white : Color.primary)
+                }
+            }
+            .overlay {
+                if isPressed { shape.fill(.black.opacity(0.12)) }
+            }
+            .frame(width: side, height: side)
+            .opacity(isEnabled ? 1 : 0.5)
+            .contentShape(Rectangle())
+            .alignmentGuide(.firstTextBaseline) { $0.height / 2 + lift }
+            .alignmentGuide(.lastTextBaseline) { $0.height / 2 + lift }
+    }
+
+    private var side: CGFloat {
+        switch controlSize {
+        case .mini: 12
+        case .small: 14
+        case .regular: 16
+        default: 18
+        }
+    }
+
+    private var aboveBaseline: CGFloat {
+        switch controlSize {
+        case .mini, .small: 4
+        default: 5
+        }
+    }
+
+    private var fill: Color {
+        if !isOn { return Color(nsColor: .systemFill) }
+        if appearsActive { return .accentColor }
+        return colorScheme == .dark ? .white.opacity(0.14) : .black.opacity(0.14)
+    }
+}
+
 /// Calls `body` once the field showing `text` is being edited. A newly
 /// focused field gets the field editor a turn or two of the run loop later,
 /// more while rows around it come and go.
@@ -1507,7 +1648,7 @@ private struct NewPriorityRow: View {
                 .frame(width: PriorityItemRow.checkWidth)
             #else
             Toggle("", isOn: .constant(false))
-                .checkboxToggleStyle()
+                .toggleStyle(.drawnCheckbox)
                 .labelsHidden()
                 .disabled(true)
             #endif

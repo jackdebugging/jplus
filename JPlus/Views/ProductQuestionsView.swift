@@ -54,15 +54,7 @@ struct ProductQuestionsView: View {
                     await findPage(using: client)
                 }
             }
-            .environment(\.openURL, OpenURLAction { url in
-                // Ticket links on this site open in the app; anything else goes to the browser.
-                if url.host() == session.client?.credentials.siteURL.host(),
-                   let key = IssueKey.parse(url.absoluteString) {
-                    onOpenIssue(key)
-                    return .handled
-                }
-                return .systemAction
-            })
+            .opensIssueLinksInApp(onOpenIssue)
     }
 
     /// The loaded page's own link, or the saved link if it is one.

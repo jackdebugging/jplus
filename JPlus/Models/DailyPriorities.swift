@@ -10,6 +10,59 @@ nonisolated struct PriorityItem: Identifiable, Hashable, Sendable {
 
     var plainText: String { content.map(\.plainText).joined() }
 
+    /// The text as it's edited: the plain text, with each link whose text
+    /// isn't its address written `[text](address)`, which saving reads back.
+    var editableText: String { editedPieces.map(\.edited).joined() }
+
+    /// Where an offset (in UTF-16) in the plain text falls in the editable
+    /// text. Inside a written-out link it's inside the brackets; at either
+    /// end of the link's text it's outside the whole link.
+    func editableOffset(forPlainOffset offset: Int) -> Int {
+        var plainStart = 0
+        var editedStart = 0
+        for piece in editedPieces {
+            let length = piece.plain.utf16.count
+            if offset <= plainStart + length {
+                let inner = offset - plainStart
+                if piece.edited == piece.plain || inner == 0 { return editedStart + inner }
+                return editedStart + (inner == length ? piece.edited.utf16.count : 1 + inner)
+            }
+            plainStart += length
+            editedStart += piece.edited.utf16.count
+        }
+        return editedStart
+    }
+
+    /// The content a piece at a time, each with its plain text and how it's
+    /// edited. A link's text nodes (split where only part is bold, say) make
+    /// one piece; one that wouldn't read back as written stays plain text.
+    private var editedPieces: [(plain: String, edited: String)] {
+        var pieces: [(plain: String, edited: String)] = []
+        var link: (href: String, text: String)?
+        func endLink() {
+            guard let current = link else { return }
+            link = nil
+            let written = "[\(current.text)](\(current.href))"
+            let keeps = current.text != current.href && written.wholeMatch(of: ADFNode.typedLink) != nil
+            pieces.append((current.text, keeps ? written : current.text))
+        }
+        for node in content {
+            if node.type == "text", let href = node.marks?.first(where: { $0.type == "link" })?.attr("href") {
+                if link?.href == href {
+                    link?.text += node.text ?? ""
+                } else {
+                    endLink()
+                    link = (href, node.text ?? "")
+                }
+            } else {
+                endLink()
+                pieces.append((node.plainText, node.plainText))
+            }
+        }
+        endLink()
+        return pieces
+    }
+
     /// Ids of the inline comments highlighting this item's text.
     var commentMarkerIDs: Set<String> { Set(content.flatMap(\.inlineCommentIDs)) }
 
@@ -304,29 +357,47 @@ nonisolated extension ADFNode {
     }
 
     /// Typed text as inline nodes: issue keys become cards that open in the
-    /// app, web links become links, line breaks become hard breaks, the rest
-    /// stays text.
+    /// app, web links become links, `[text](address)` becomes text linked to
+    /// the address, line breaks become hard breaks, the rest stays text.
     static func inlineContent(from text: String, siteURL: URL) -> [ADFNode] {
         var nodes: [ADFNode] = []
         for (index, line) in text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline).enumerated() {
             if index > 0 { nodes.append(ADFNode(type: "hardBreak")) }
-            nodes += lineContent(from: String(line), siteURL: siteURL)
+            nodes += lineContent(from: line, siteURL: siteURL)
         }
         return nodes
     }
 
-    private static func lineContent(from text: String, siteURL: URL) -> [ADFNode] {
+    /// A link written `[text](address)`, as in Markdown and as pasting an
+    /// address over selected text writes it. The address can hold one level
+    /// of parentheses, as Wikipedia's do.
+    static var typedLink: Regex<(Substring, Substring, Substring)> {
+        /\[([^\[\]\n]+)\]\((https?:\/\/(?:[^\s()]|\([^\s()]*\))+)\)/
+    }
+
+    private static func lineContent(from text: Substring, siteURL: URL) -> [ADFNode] {
+        var nodes: [ADFNode] = []
+        var rest = text
+        while let match = rest.firstMatch(of: typedLink) {
+            nodes += wordContent(from: rest[..<match.range.lowerBound], siteURL: siteURL)
+            nodes.append(ADFNode(type: "text", text: String(match.1), marks: [ADFMark(type: "link", attrs: ["href": .string(String(match.2))])]))
+            rest = rest[match.range.upperBound...]
+        }
+        return nodes + wordContent(from: rest, siteURL: siteURL)
+    }
+
+    private static func wordContent(from text: Substring, siteURL: URL) -> [ADFNode] {
         var nodes: [ADFNode] = []
         var plain = ""
         func flush() {
             if !plain.isEmpty { nodes.append(ADFNode(type: "text", text: plain)); plain = "" }
         }
-        for word in text.split(separator: " ", omittingEmptySubsequences: false) {
+        for (index, word) in text.split(separator: " ", omittingEmptySubsequences: false).enumerated() {
             let token = String(word)
             // Trailing punctuation stays outside the link or card.
             let core = token.trimmingCharacters(in: CharacterSet(charactersIn: ".,;:!?)"))
             let trailing = String(token.dropFirst(core.count))
-            if !plain.isEmpty || !nodes.isEmpty { plain += " " }
+            if index > 0 { plain += " " }
             if core.wholeMatch(of: /[A-Z][A-Z0-9_]*-[0-9]+/) != nil {
                 flush()
                 nodes.append(ADFNode(type: "inlineCard", attrs: ["url": .string(siteURL.appending(path: "browse/\(core)").absoluteString)]))
@@ -341,6 +412,74 @@ nonisolated extension ADFNode {
         }
         flush()
         return nodes
+    }
+
+    /// When an edit from `old` to `new` pasted a web address over selected
+    /// text, where the address landed in `new` and the `[text](address)`
+    /// to put there instead, making that text a link to it. Spaces at the
+    /// ends of the selection stay outside the link. Nil for any other edit,
+    /// such as a paste with nothing selected (which saving links anyway).
+    /// `pasted` gives what was pasted; it's asked only for an edit that
+    /// could be a paste, not a keystroke.
+    static func linkingPaste(from old: String, to new: String, pasted: () -> String?) -> (range: Range<String.Index>, link: String)? {
+        let oldChars = Array(old)
+        let newChars = Array(new)
+        let shared = sharedEnds(oldChars, newChars)
+        let changeEnd = newChars.count - min(shared.suffix, min(oldChars.count, newChars.count) - shared.prefix)
+        guard changeEnd - shared.prefix > 1, let raw = pasted() else { return nil }
+        let address = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let insert = Array(raw)
+        guard !address.isEmpty, insert.count <= newChars.count else { return nil }
+        // Where the paste went: text before it that `old` starts with, after
+        // it that `old` ends with, and the selection it replaced between.
+        for start in 0...(newChars.count - insert.count) where start <= shared.prefix {
+            let end = start + insert.count
+            let tail = newChars.count - end
+            guard tail <= shared.suffix, oldChars.count - tail > start,
+                  newChars[start..<end].elementsEqual(insert) else { continue }
+            let selectedRange = old.index(old.startIndex, offsetBy: start)..<old.index(old.endIndex, offsetBy: -tail)
+            let selected = old[selectedRange]
+            let text = selected.trimmingCharacters(in: .whitespaces)
+            let link = "[\(text)](\(address))"
+            // Not over an address (that's replacing one link with another),
+            // nor over part of a link already written out.
+            guard !text.isEmpty, !text.contains("://"), link.wholeMatch(of: typedLink) != nil,
+                  !old.matches(of: typedLink).contains(where: { $0.range.overlaps(selectedRange) }) else { return nil }
+            let leading = selected.prefix(while: \.isWhitespace)
+            let trailing = selected.reversed().prefix(while: \.isWhitespace)
+            let range = new.index(new.startIndex, offsetBy: start)..<new.index(new.startIndex, offsetBy: end)
+            return (range, String(leading) + link + String(trailing.reversed()))
+        }
+        return nil
+    }
+
+    /// The web address an edit from `old` to `new` put in all at once, as a
+    /// paste does, worked out from the text alone, since on iOS reading the
+    /// pasteboard asks the user first. It's the word holding the change,
+    /// from where `http://` or `https://` starts, less punctuation after it
+    /// as when typed.
+    static func insertedWebAddress(from old: String, to new: String) -> String? {
+        let oldChars = Array(old)
+        let newChars = Array(new)
+        let shared = sharedEnds(oldChars, newChars)
+        let changeEnd = newChars.count - min(shared.suffix, min(oldChars.count, newChars.count) - shared.prefix)
+        guard changeEnd > shared.prefix else { return nil }
+        var wordStart = shared.prefix
+        while wordStart > 0, !newChars[wordStart - 1].isWhitespace { wordStart -= 1 }
+        guard let start = (wordStart...shared.prefix).last(where: {
+            newChars[$0...].starts(with: "https://") || newChars[$0...].starts(with: "http://")
+        }) else { return nil }
+        var end = changeEnd
+        while end < newChars.count, !newChars[end].isWhitespace { end += 1 }
+        while end > changeEnd, ".,;:!?)".contains(newChars[end - 1]) { end -= 1 }
+        let word = newChars[start..<end]
+        return word.contains(where: \.isWhitespace) ? nil : String(word)
+    }
+
+    /// How many characters two texts share at the start and at the end,
+    /// each counted on its own, so the two can overlap.
+    private static func sharedEnds(_ a: [Character], _ b: [Character]) -> (prefix: Int, suffix: Int) {
+        (zip(a, b).prefix { $0 == $1 }.count, zip(a.reversed(), b.reversed()).prefix { $0 == $1 }.count)
     }
 }
 

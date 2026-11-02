@@ -474,8 +474,9 @@ final class PrioritiesModel {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return remove(item, from: day) }
         let content = ADFNode.inlineContent(from: trimmed, siteURL: siteURL)
-        write(page: day.pageID, itemID: item.id, message: "Edited: \(trimmed.prefix(60))",
-              showing: PrioritySave(change: .saving, text: trimmed, isDone: item.isDone)) { document in
+        let shown = content.map(\.plainText).joined()
+        write(page: day.pageID, itemID: item.id, message: "Edited: \(shown.prefix(60))",
+              showing: PrioritySave(change: .saving, text: shown, isDone: item.isDone)) { document in
             document.replacingTaskItems { current, node in
                 current.id == item.id ? ADFNode(type: node.type, attrs: node.attrs, content: content) : node
             }
@@ -501,9 +502,11 @@ final class PrioritiesModel {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         let id = UUID().uuidString.lowercased()
-        let item = ADFNode.taskItem(ADFNode.inlineContent(from: trimmed, siteURL: siteURL), id: id)
-        write(page: day.pageID, itemID: id, message: "Added: \(trimmed.prefix(60))",
-              showing: PrioritySave(change: .adding, text: trimmed, isDone: false)) { document in
+        let content = ADFNode.inlineContent(from: trimmed, siteURL: siteURL)
+        let shown = content.map(\.plainText).joined()
+        let item = ADFNode.taskItem(content, id: id)
+        write(page: day.pageID, itemID: id, message: "Added: \(shown.prefix(60))",
+              showing: PrioritySave(change: .adding, text: shown, isDone: false)) { document in
             itemID.flatMap { document.insertingTaskItem(item, after: $0) } ?? document.appendingTaskItem([item])
         }
         return id

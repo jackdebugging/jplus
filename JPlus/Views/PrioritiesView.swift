@@ -971,6 +971,7 @@ private struct PriorityItemRow: View {
                 .textFieldStyle(.plain)
                 .lineLimit(1...6)
                 .focused($isFocused)
+                .linksPastedAddresses(in: $draft)
                 #if os(macOS)
                 .onSubmit(submitEdit)
                 // There's nothing to cancel: what's typed is kept, as in Reminders.
@@ -1079,7 +1080,7 @@ private struct PriorityItemRow: View {
         // New text would drop the highlight its comments hang on, or the
         // one a comment being typed will.
         guard !hasComments, composing != .newThread else { return }
-        draft = item.plainText
+        draft = item.editableText
         isEditing = true
         isFocused = true
     }
@@ -1130,12 +1131,16 @@ private struct PriorityItemRow: View {
         editClick = nil
         whenEditing(draft) { window, editor in
             var index = (editor.string as NSString).length
-            if let click {
+            if let click, editor.string == item.plainText {
                 // The click was measured from the text's top-left corner; find
                 // that corner in the field, which shows the same text.
                 let start = window.convertFromScreen(editor.firstRect(forCharacterRange: NSRange(location: 0, length: 0), actualRange: nil))
                 let point = NSPoint(x: start.minX + click.x, y: start.maxY - click.y)
                 index = editor.characterIndexForInsertion(at: editor.convert(point, from: nil))
+            } else if let click {
+                // Its links are written out in the field, so find the spot in
+                // the text that was clicked, laid out as the field would.
+                index = item.editableOffset(forPlainOffset: insertionIndex(in: item.plainText, at: click, laidOutLike: editor))
             }
             editor.setSelectedRange(NSRange(location: index, length: 0))
         }
@@ -1145,7 +1150,7 @@ private struct PriorityItemRow: View {
     private func commitEdit() {
         guard isEditing else { return }
         isEditing = false
-        if draft != item.plainText {
+        if draft != item.editableText {
             model.setText(draft, item: item, in: day)
         }
     }
@@ -1313,6 +1318,7 @@ private struct PriorityCommentComposer: View {
                     TextEditor(text: Binding(get: { draft }, set: { draft = $0 }))
                         .scrollContentBackground(.hidden)
                         .focused($isFocused)
+                        .linksPastedAddresses(in: Binding(get: { draft }, set: { draft = $0 }))
                         .disabled(isPosting)
                     if draft.isEmpty {
                         Text(placeholder)
@@ -1473,6 +1479,21 @@ private func whenEditing(_ text: String, tries: Int = 5, _ body: @escaping (NSWi
     }
 }
 
+/// Where a click lands in `text` if `editor` showed it, measured from the
+/// top-left corner of its first line, for a field that shows other text.
+private func insertionIndex(in text: String, at click: CGPoint, laidOutLike editor: NSTextView) -> Int {
+    let storage = NSTextStorage(string: text, attributes: editor.typingAttributes)
+    let layout = NSLayoutManager()
+    storage.addLayoutManager(layout)
+    let container = NSTextContainer(size: NSSize(width: editor.textContainer?.size.width ?? editor.bounds.width, height: .greatestFiniteMagnitude))
+    container.lineFragmentPadding = editor.textContainer?.lineFragmentPadding ?? 0
+    layout.addTextContainer(container)
+    var fraction: CGFloat = 0
+    let index = layout.characterIndex(for: NSPoint(x: container.lineFragmentPadding + click.x, y: click.y), in: container,
+                                      fractionOfDistanceBetweenInsertionPoints: &fraction)
+    return index + (fraction > 0.5 ? 1 : 0)
+}
+
 private extension View {
     /// Takes clicks out to `insets` around the view without moving it, so
     /// a gesture after this still reports where they land in its own space.
@@ -1528,6 +1549,29 @@ private struct EndsEditingOnClickOutside: ViewModifier {
 
 #endif
 
+private extension View {
+    /// Pasting a web address over selected text in the field makes that text
+    /// a link to it, written `[text](address)` until it's saved.
+    func linksPastedAddresses(in text: Binding<String>) -> some View {
+        onChange(of: text.wrappedValue) { old, new in
+            #if os(macOS)
+            guard let paste = ADFNode.linkingPaste(from: old, to: new, pasted: { NSPasteboard.general.string(forType: .string) })
+            else { return }
+            // Typed into the field, so the caret ends up after the link and
+            // Undo goes back to the address as pasted.
+            DispatchQueue.main.async {
+                guard let editor = NSApp.keyWindow?.firstResponder as? NSTextView, editor.string == new else { return }
+                editor.insertText(paste.link, replacementRange: NSRange(paste.range, in: new))
+            }
+            #else
+            guard let paste = ADFNode.linkingPaste(from: old, to: new, pasted: { ADFNode.insertedWebAddress(from: old, to: new) })
+            else { return }
+            text.wrappedValue = new.replacingCharacters(in: paste.range, with: paste.link)
+            #endif
+        }
+    }
+}
+
 /// The field at the end of the selected day for a new priority. Return adds
 /// it and stays for the next. What's typed sits in the drafts, which only
 /// this field reads, so a keystroke updates the field alone instead of
@@ -1563,6 +1607,7 @@ private struct AddPriorityField: View {
             TextField("New \(itemName.capitalized)", text: Bindable(drafts).newPriority, axis: .vertical)
                 .lineLimit(1...4)
                 .focused($isFocused)
+                .linksPastedAddresses(in: Bindable(drafts).newPriority)
                 .onChange(of: text) { old, new in
                     guard isReturnKeystroke(from: old, to: new) else { return }
                     text = old
@@ -1597,6 +1642,7 @@ private struct AddPriorityField: View {
                 .textFieldStyle(.plain)
                 .lineLimit(1...4)
                 .focused($isFocused)
+                .linksPastedAddresses(in: Bindable(drafts).newPriority)
                 .onSubmit { add() }
         }
         .padding(.top, 2)
@@ -1656,6 +1702,7 @@ private struct NewPriorityRow: View {
                 .textFieldStyle(.plain)
                 .lineLimit(1...6)
                 .focused($isFocused)
+                .linksPastedAddresses(in: $text)
                 #if os(macOS)
                 .onSubmit(submit)
                 .endsEditingOnClickOutside(isFocused: isFocused, text: text)

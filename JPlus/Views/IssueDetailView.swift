@@ -296,6 +296,7 @@ private struct IssueContentView: View {
             .foregroundStyle(.secondary)
             .textSelection(.enabled)
             .fixedSize()
+        IssueCopyButtons(key: issue.key)
         Spacer()
         IssueStatusButton(issue: issue, onChanged: onChanged)
             .fixedSize()
@@ -954,6 +955,56 @@ private struct IssueKeyMenu: View {
 }
 
 // MARK: - Pieces
+
+/// Copy Link and Copy Key, shown beside the key in the header.
+private struct IssueCopyButtons: View {
+    let key: String
+
+    @Environment(SessionStore.self) private var session
+
+    var body: some View {
+        HStack(spacing: 2) {
+            if let client = session.client {
+                CopyIconButton(title: "Copy Link", systemImage: "link", help: "Copy a link to \(key)") {
+                    client.browseURL(for: key).absoluteString
+                }
+            }
+            CopyIconButton(title: "Copy Key", systemImage: "doc.on.doc", help: "Copy \(key)") { key }
+        }
+        .fixedSize()
+    }
+}
+
+/// An icon button that copies text and shows a checkmark for a moment after.
+private struct CopyIconButton: View {
+    let title: String
+    let systemImage: String
+    let help: String
+    let text: () -> String
+
+    @State private var copied = false
+
+    var body: some View {
+        Button {
+            Clipboard.copy(text())
+            copied = true
+            Task {
+                try? await Task.sleep(for: .seconds(1.5))
+                copied = false
+            }
+        } label: {
+            Label(title, systemImage: copied ? "checkmark" : systemImage)
+                .labelStyle(.iconOnly)
+                .contentTransition(.symbolEffect(.replace))
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .scaledFont(.callout)
+        .foregroundStyle(copied ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+        .help(help)
+    }
+}
 
 private struct IssueCursorPromptButton: View {
     let kind: IssueCursorPromptKind

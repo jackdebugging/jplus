@@ -326,7 +326,7 @@ struct HomeView: View {
     }
 
     private var productQuestionsRow: some View {
-        Label("Product Questions", systemImage: "questionmark.bubble")
+        Label("Product Qs", systemImage: "questionmark.bubble")
             .tag(SidebarItem.productQuestions)
     }
 

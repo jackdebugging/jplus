@@ -12,7 +12,7 @@ enum SidebarSection: String, CaseIterable, Identifiable {
         case .myIssues: "My Issues"
         case .mentions: "Mentions"
         case .priorities: "Daily Priorities"
-        case .productQuestions: "Product Questions"
+        case .productQuestions: "Product Qs"
         case .spaces: "Spaces"
         case .recentIssues: "Recent Issues"
         }
